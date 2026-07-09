@@ -62,6 +62,8 @@ class User(Base):
     role = Column(Enum(UserRole), default=UserRole.worker)
     admin_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     is_active = Column(Boolean, default=True)
+    is_default = Column(Boolean, default=False)       # True only for the seed admin account
+    profile_complete = Column(Boolean, default=True)  # False until setup wizard is done
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
     last_login = Column(DateTime(timezone=True))

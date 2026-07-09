@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 from backend.database import get_db
 from backend.models import User, Medicine, Sale, Supplier, Prescription, UserRole
-from backend.auth import get_current_user, get_tenant_id
+from backend.auth import get_current_user, get_tenant_id, require_profile_complete
 from backend.schemas import DashboardStats
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
@@ -12,7 +12,7 @@ router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
 @router.get("/stats", response_model=DashboardStats)
 async def get_dashboard_stats(
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_profile_complete),
     db: AsyncSession = Depends(get_db),
 ):
     tenant_id = get_tenant_id(user)

@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from backend.database import get_db
 from backend.models import Medicine
-from backend.auth import get_current_user, get_tenant_id
+from backend.auth import get_current_user, get_tenant_id, require_profile_complete
 from backend.models import User
 
 router = APIRouter(prefix="/medicines", tags=["Medicines"])
@@ -70,7 +70,7 @@ async def list_medicines(
     low_stock_only: bool = Query(False),
     limit: int = Query(1000, le=5000),
     offset: int = Query(0),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_profile_complete),
     db: AsyncSession = Depends(get_db),
 ):
     tenant_id = get_tenant_id(user)
@@ -98,7 +98,7 @@ async def list_medicines(
 
 @router.get("/categories")
 async def list_categories(
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_profile_complete),
     db: AsyncSession = Depends(get_db),
 ):
     tenant_id = get_tenant_id(user)
@@ -114,7 +114,7 @@ async def list_categories(
 @router.get("/{medicine_id}", response_model=MedicineResponse)
 async def get_medicine(
     medicine_id: uuid.UUID,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_profile_complete),
     db: AsyncSession = Depends(get_db),
 ):
     tenant_id = get_tenant_id(user)
@@ -132,7 +132,7 @@ async def get_medicine(
 @router.post("", response_model=MedicineResponse, status_code=201)
 async def create_medicine(
     data: MedicineCreate,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_profile_complete),
     db: AsyncSession = Depends(get_db),
 ):
     tenant_id = get_tenant_id(user)
@@ -159,7 +159,7 @@ async def create_medicine(
 async def update_medicine(
     medicine_id: uuid.UUID,
     data: MedicineUpdate,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_profile_complete),
     db: AsyncSession = Depends(get_db),
 ):
     tenant_id = get_tenant_id(user)
@@ -195,7 +195,7 @@ async def update_medicine(
 @router.delete("/{medicine_id}", status_code=204)
 async def delete_medicine(
     medicine_id: uuid.UUID,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_profile_complete),
     db: AsyncSession = Depends(get_db),
 ):
     tenant_id = get_tenant_id(user)

@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from backend.database import get_db
 from backend.models import Prescription, PrescriptionItem, Medicine, User
-from backend.auth import get_current_user, get_tenant_id
+from backend.auth import get_current_user, get_tenant_id, require_profile_complete
 
 router = APIRouter(prefix="/prescriptions", tags=["Prescriptions"])
 
@@ -81,7 +81,7 @@ async def list_prescriptions(
     search: Optional[str] = Query(None),
     limit: int = Query(100, le=1000),
     offset: int = Query(0),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_profile_complete),
     db: AsyncSession = Depends(get_db),
 ):
     tenant_id = get_tenant_id(user)
@@ -105,7 +105,7 @@ async def list_prescriptions(
 @router.get("/{prescription_id}", response_model=PrescriptionResponse)
 async def get_prescription(
     prescription_id: uuid.UUID,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_profile_complete),
     db: AsyncSession = Depends(get_db),
 ):
     tenant_id = get_tenant_id(user)
@@ -122,7 +122,7 @@ async def get_prescription(
 @router.post("", response_model=PrescriptionResponse, status_code=201)
 async def create_prescription(
     data: PrescriptionCreate,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_profile_complete),
     db: AsyncSession = Depends(get_db),
 ):
     tenant_id = get_tenant_id(user)
@@ -174,7 +174,7 @@ async def create_prescription(
 async def update_prescription(
     prescription_id: uuid.UUID,
     data: PrescriptionUpdate,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_profile_complete),
     db: AsyncSession = Depends(get_db),
 ):
     tenant_id = get_tenant_id(user)
@@ -197,7 +197,7 @@ async def update_prescription(
 @router.delete("/{prescription_id}", status_code=204)
 async def delete_prescription(
     prescription_id: uuid.UUID,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_profile_complete),
     db: AsyncSession = Depends(get_db),
 ):
     tenant_id = get_tenant_id(user)

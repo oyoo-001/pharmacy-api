@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from backend.database import get_db
 from backend.models import Sale, SaleItem, Medicine, InventoryTransaction, TransactionType, User
-from backend.auth import get_current_user, get_tenant_id
+from backend.auth import get_current_user, get_tenant_id, require_profile_complete
 
 router = APIRouter(prefix="/sales", tags=["Sales"])
 
@@ -79,7 +79,7 @@ async def list_sales(
     date_to: Optional[date] = Query(None),
     limit: int = Query(100, le=1000),
     offset: int = Query(0),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_profile_complete),
     db: AsyncSession = Depends(get_db),
 ):
     tenant_id = get_tenant_id(user)
@@ -101,7 +101,7 @@ async def list_sales(
 @router.get("/{sale_id}", response_model=SaleResponse)
 async def get_sale(
     sale_id: uuid.UUID,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_profile_complete),
     db: AsyncSession = Depends(get_db),
 ):
     tenant_id = get_tenant_id(user)
@@ -118,7 +118,7 @@ async def get_sale(
 @router.post("", response_model=SaleResponse, status_code=201)
 async def create_sale(
     data: SaleCreate,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_profile_complete),
     db: AsyncSession = Depends(get_db),
 ):
     tenant_id = get_tenant_id(user)
@@ -206,7 +206,7 @@ async def create_sale(
 @router.get("/reports/daily")
 async def daily_report(
     report_date: Optional[date] = Query(None),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_profile_complete),
     db: AsyncSession = Depends(get_db),
 ):
     tenant_id = get_tenant_id(user)
@@ -236,7 +236,7 @@ async def daily_report(
 async def monthly_report(
     year: int = Query(None),
     month: int = Query(None),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_profile_complete),
     db: AsyncSession = Depends(get_db),
 ):
     tenant_id = get_tenant_id(user)

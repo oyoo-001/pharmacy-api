@@ -86,6 +86,16 @@ def require_admin(user: User = Depends(get_current_user)) -> User:
     return user
 
 
+def require_profile_complete(user: User = Depends(get_current_user)) -> User:
+    """Any authenticated user — must have completed setup (not the default seed account)."""
+    if getattr(user, "is_default", False) or not getattr(user, "profile_complete", True):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account setup not complete. Please finish the setup wizard first.",
+        )
+    return user
+
+
 # ---------- Tenant ID helper ----------
 
 def get_tenant_id(user: User) -> uuid.UUID:

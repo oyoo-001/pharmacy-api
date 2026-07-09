@@ -20,6 +20,28 @@ class TokenResponse(BaseModel):
     full_name: str
     role: UserRole
     admin_id: Optional[str] = None
+    requires_setup: bool = False   # True when logged in with the default seed account
+
+
+# Setup wizard — called once to graduate the default account into a real admin
+class SetupRequest(BaseModel):
+    new_username: str = Field(min_length=3, max_length=100)
+    new_password: str = Field(min_length=8)
+    full_name: str = Field(min_length=1, max_length=200)
+    pharmacy_name: str = Field(min_length=1, max_length=200)
+    phone: Optional[str] = None
+    email: Optional[str] = None
+
+
+class SetupResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user_id: str
+    username: str
+    full_name: str
+    role: UserRole
+    admin_id: str
+    requires_setup: bool = False
 
 
 class TokenData(BaseModel):
@@ -49,6 +71,8 @@ class UserResponse(BaseModel):
     role: UserRole
     admin_id: Optional[uuid.UUID] = None
     is_active: bool
+    is_default: bool = False
+    profile_complete: bool = True
     created_at: datetime
     last_login: Optional[datetime] = None
 

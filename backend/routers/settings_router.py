@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from backend.database import get_db
 from backend.models import PharmacySetting, User
-from backend.auth import get_current_user, require_admin, get_tenant_id
+from backend.auth import get_current_user, require_admin, get_tenant_id, require_profile_complete
 
 router = APIRouter(prefix="/settings", tags=["Settings"])
 
@@ -46,7 +46,7 @@ class SettingsResponse(BaseModel):
 
 @router.get("", response_model=SettingsResponse)
 async def get_settings(
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_profile_complete),
     db: AsyncSession = Depends(get_db),
 ):
     tenant_id = get_tenant_id(user)

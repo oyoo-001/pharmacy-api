@@ -1,11 +1,29 @@
+"""
+Authentication router.
+
+Default admin flow
+------------------
+1. A seed account (username=admin, password=admin123) is created on first startup.
+   It is flagged is_default=True, profile_complete=False.
+2. Login with the seed account returns requires_setup=True in the token response.
+3. The only thing a default-account token may do is call POST /auth/setup.
+   Every other endpoint rejects it with 403.
+4. POST /auth/setup creates a brand-new real admin under a fresh UUID, seeds
+   PharmacySettings for them, marks the seed account is_active=False so it can
+   never be used again, and returns a fresh token for the new admin.
+"""
 import uuid
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+
 from backend.database import get_db
-from backend.models import User, UserRole
-from backend.schemas import LoginRequest, TokenResponse, UserCreate, UserResponse
+from backend.models import User, UserRole, PharmacySetting
+from backend.schemas import (
+    LoginRequest, TokenResponse, UserCreate, UserResponse,
+    SetupRequest, SetupResponse,
+)
 from backend.auth import (
     hash_password, verify_password, create_access_token,
     get_current_user, require_admin, get_tenant_id,
@@ -13,6 +31,59 @@ from backend.auth import (
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
+
+# ---------------------------------------------------------------------------
+# Dependency: reject default-account tokens on normal endpoints
+# ---------------------------------------------------------------------------
+
+def require_real_admin(user: User = Depends(require_admin)) -> User:
+    """Admin-only AND must have completed setup."""
+    if getattr(user, "is_default", False) or not getattr(user, "profile_complete", True):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account setup not complete. Please finish the setup wizard first.",
+        )
+    return user
+
+
+def require_profile_complete(user: User = Depends(get_current_user)) -> User:
+    """Any authenticated user — must have profile_complete=True."""
+    if getattr(user, "is_default", False) or not getattr(user, "profile_complete", True):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account setup not complete. Please finish the setup wizard first.",
+        )
+    return user
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _build_token_response(user: User, requires_setup: bool = False) -> TokenResponse:
+    tenant_id = str(user.admin_id) if user.admin_id else str(user.id)
+    token_data = {
+        "sub": str(user.id),
+        "username": user.username,
+        "role": user.role.value,
+        "admin_id": tenant_id,
+        "requires_setup": requires_setup,
+    }
+    access_token = create_access_token(data=token_data)
+    return TokenResponse(
+        access_token=access_token,
+        user_id=str(user.id),
+        username=user.username,
+        full_name=user.full_name,
+        role=user.role,
+        admin_id=tenant_id,
+        requires_setup=requires_setup,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
 
 @router.post("/login", response_model=TokenResponse)
 async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
@@ -33,39 +104,106 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
     user.last_login = datetime.now(timezone.utc)
     await db.commit()
 
-    token_data = {
-        "sub": str(user.id),
-        "username": user.username,
-        "role": user.role.value,
-        "admin_id": str(user.admin_id) if user.admin_id else str(user.id),
-    }
-    access_token = create_access_token(data=token_data)
-
-    return TokenResponse(
-        access_token=access_token,
-        user_id=str(user.id),
-        username=user.username,
-        full_name=user.full_name,
-        role=user.role,
-        admin_id=str(user.admin_id) if user.admin_id else str(user.id),
-    )
+    requires_setup = getattr(user, "is_default", False) or not getattr(user, "profile_complete", True)
+    return _build_token_response(user, requires_setup=requires_setup)
 
 
 @router.post("/verify")
 async def verify_token(user: User = Depends(get_current_user)):
+    requires_setup = getattr(user, "is_default", False) or not getattr(user, "profile_complete", True)
     return {
         "valid": True,
         "user_id": str(user.id),
         "username": user.username,
         "role": user.role.value,
         "admin_id": str(user.admin_id) if user.admin_id else str(user.id),
+        "requires_setup": requires_setup,
     }
+
+
+@router.post("/setup", response_model=SetupResponse)
+async def setup_account(
+    req: SetupRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Called once after first login with the default account.
+    Creates a brand-new real admin with the provided credentials and profile.
+    The seed (default) account is permanently deactivated.
+    """
+    # Only the default seed account (or incomplete profile) may call this
+    is_default = getattr(current_user, "is_default", False)
+    profile_done = getattr(current_user, "profile_complete", True)
+    if not is_default and profile_done:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Setup already completed for this account.",
+        )
+
+    # New username must not collide
+    dup = await db.execute(select(User).where(User.username == req.new_username))
+    if dup.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Username '{req.new_username}' is already taken. Choose a different one.",
+        )
+
+    # Create the real admin account
+    new_admin = User(
+        username=req.new_username,
+        password_hash=hash_password(req.new_password),
+        full_name=req.full_name,
+        email=req.email,
+        phone=req.phone,
+        role=UserRole.admin,
+        is_active=True,
+        is_default=False,
+        profile_complete=True,
+    )
+    db.add(new_admin)
+    await db.flush()  # get new_admin.id
+
+    # Seed pharmacy settings for the new admin
+    pharmacy = PharmacySetting(
+        admin_id=new_admin.id,
+        pharmacy_name=req.pharmacy_name,
+        phone=req.phone,
+        email=req.email,
+        currency_symbol="KES",
+        tax_rate=0.16,
+    )
+    db.add(pharmacy)
+
+    # Permanently deactivate the seed account
+    current_user.is_active = False
+    await db.commit()
+
+    # Issue fresh token for the new admin
+    token_data = {
+        "sub": str(new_admin.id),
+        "username": new_admin.username,
+        "role": new_admin.role.value,
+        "admin_id": str(new_admin.id),
+        "requires_setup": False,
+    }
+    access_token = create_access_token(data=token_data)
+
+    return SetupResponse(
+        access_token=access_token,
+        user_id=str(new_admin.id),
+        username=new_admin.username,
+        full_name=new_admin.full_name,
+        role=new_admin.role,
+        admin_id=str(new_admin.id),
+        requires_setup=False,
+    )
 
 
 @router.post("/register", response_model=UserResponse)
 async def register_worker(
     req: UserCreate,
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_real_admin),   # blocks default account
     db: AsyncSession = Depends(get_db),
 ):
     existing = await db.execute(select(User).where(User.username == req.username))
@@ -80,6 +218,8 @@ async def register_worker(
         phone=req.phone,
         role=req.role,
         admin_id=admin.id if admin.role == UserRole.admin else admin.admin_id,
+        is_default=False,
+        profile_complete=True,
     )
     db.add(user)
     await db.commit()
@@ -89,7 +229,7 @@ async def register_worker(
 
 @router.get("/workers", response_model=list[UserResponse])
 async def list_workers(
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_real_admin),   # blocks default account
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(

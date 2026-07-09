@@ -8,7 +8,7 @@ from pydantic import BaseModel, EmailStr, Field
 
 from backend.database import get_db
 from backend.models import Supplier, User
-from backend.auth import get_current_user, get_tenant_id
+from backend.auth import get_current_user, get_tenant_id, require_profile_complete
 
 router = APIRouter(prefix="/suppliers", tags=["Suppliers"])
 
@@ -57,7 +57,7 @@ class SupplierResponse(BaseModel):
 @router.get("", response_model=list[SupplierResponse])
 async def list_suppliers(
     search: Optional[str] = Query(None),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_profile_complete),
     db: AsyncSession = Depends(get_db),
 ):
     tenant_id = get_tenant_id(user)
@@ -77,7 +77,7 @@ async def list_suppliers(
 @router.get("/{supplier_id}", response_model=SupplierResponse)
 async def get_supplier(
     supplier_id: uuid.UUID,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_profile_complete),
     db: AsyncSession = Depends(get_db),
 ):
     tenant_id = get_tenant_id(user)
@@ -95,7 +95,7 @@ async def get_supplier(
 @router.post("", response_model=SupplierResponse, status_code=201)
 async def create_supplier(
     data: SupplierCreate,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_profile_complete),
     db: AsyncSession = Depends(get_db),
 ):
     tenant_id = get_tenant_id(user)
@@ -110,7 +110,7 @@ async def create_supplier(
 async def update_supplier(
     supplier_id: uuid.UUID,
     data: SupplierUpdate,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_profile_complete),
     db: AsyncSession = Depends(get_db),
 ):
     tenant_id = get_tenant_id(user)
@@ -134,7 +134,7 @@ async def update_supplier(
 @router.delete("/{supplier_id}", status_code=204)
 async def delete_supplier(
     supplier_id: uuid.UUID,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_profile_complete),
     db: AsyncSession = Depends(get_db),
 ):
     tenant_id = get_tenant_id(user)

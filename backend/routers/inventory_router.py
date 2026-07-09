@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from backend.database import get_db
 from backend.models import Medicine, InventoryTransaction, User, TransactionType
-from backend.auth import get_current_user, get_tenant_id
+from backend.auth import get_current_user, get_tenant_id, require_profile_complete
 
 router = APIRouter(prefix="/inventory", tags=["Inventory"])
 
@@ -37,7 +37,7 @@ class StockSummary(BaseModel):
 
 @router.get("/summary", response_model=StockSummary)
 async def stock_summary(
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_profile_complete),
     db: AsyncSession = Depends(get_db),
 ):
     tenant_id = get_tenant_id(user)
@@ -64,7 +64,7 @@ async def list_transactions(
     medicine_id: Optional[uuid.UUID] = Query(None),
     limit: int = Query(100, le=1000),
     offset: int = Query(0),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_profile_complete),
     db: AsyncSession = Depends(get_db),
 ):
     tenant_id = get_tenant_id(user)
@@ -85,7 +85,7 @@ async def list_transactions(
 
 @router.get("/alerts/low-stock")
 async def low_stock_alerts(
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_profile_complete),
     db: AsyncSession = Depends(get_db),
 ):
     tenant_id = get_tenant_id(user)
@@ -112,7 +112,7 @@ async def low_stock_alerts(
 @router.get("/alerts/expiring")
 async def expiring_alerts(
     days: int = Query(30, ge=1, le=365),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_profile_complete),
     db: AsyncSession = Depends(get_db),
 ):
     from datetime import timedelta, date
