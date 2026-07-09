@@ -166,7 +166,7 @@ class Sale(Base):
     payment_status = Column(Enum(PaymentStatus), default=PaymentStatus.completed)
     created_at = Column(DateTime(timezone=True), default=utcnow)
 
-    items = relationship("SaleItem", back_populates="sale")
+    items = relationship("SaleItem", back_populates="sale", cascade="all, delete-orphan")
 
     __table_args__ = (
         UniqueConstraint("admin_id", "invoice_number"),
@@ -205,7 +205,7 @@ class Prescription(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
-    items = relationship("PrescriptionItem", back_populates="prescription")
+    items = relationship("PrescriptionItem", back_populates="prescription", cascade="all, delete-orphan")
 
 
 class PrescriptionItem(Base):
@@ -238,7 +238,7 @@ class PurchaseOrder(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
-    items = relationship("PurchaseOrderItem", back_populates="purchase_order")
+    items = relationship("PurchaseOrderItem", back_populates="purchase_order", cascade="all, delete-orphan")
 
     __table_args__ = (
         UniqueConstraint("admin_id", "po_number"),
