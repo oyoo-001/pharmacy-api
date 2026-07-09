@@ -175,8 +175,9 @@ async def setup_account(
     )
     db.add(pharmacy)
 
-    # Permanently deactivate the seed account
-    current_user.is_active = False
+    # Do NOT deactivate the seed account — it stays active so other
+    # fresh installs can still use admin/admin123 to set up their own account.
+    # We only mark it profile_complete=False so it always redirects to setup.
     await db.commit()
 
     # Issue fresh token for the new admin

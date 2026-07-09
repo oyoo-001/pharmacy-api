@@ -64,7 +64,7 @@ class UserCreate(BaseModel):
     full_name: str = Field(min_length=1, max_length=200)
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
-    role: UserRole = UserRole.worker
+    role: UserRole = UserRole.worker  # admin | pharmacist | cashier | worker
 
 
 class UserResponse(BaseModel):

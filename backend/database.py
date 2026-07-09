@@ -49,7 +49,7 @@ async def _run_column_migrations():
         # Ensure all enum types exist with the correct names
         # (DO $$ block is idempotent — creates only if missing)
         enum_migrations = [
-            ("user_role",       "admin, worker"),
+            ("user_role",       "admin, pharmacist, cashier, worker"),
             ("transactiontype", "purchase, sale, return, adjustment"),
             ("paymentmethod",   "cash, mobile_money, credit"),
             ("paymentstatus",   "completed, refunded, pending"),
@@ -57,6 +57,7 @@ async def _run_column_migrations():
         ]
         for type_name, values in enum_migrations:
             quoted = ", ".join(f"'{v}'" for v in values.split(", "))
+            # Create type if it doesn't exist
             stmt = f"""
                 DO $$ BEGIN
                     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = '{type_name}') THEN
@@ -69,6 +70,21 @@ async def _run_column_migrations():
                 log.info("Enum type ensured: %s", type_name)
             except Exception as e:
                 log.warning("Enum type migration skipped (%s): %s", type_name, e)
+
+        # Add new enum values to existing user_role type (idempotent)
+        new_role_values = ["pharmacist", "cashier"]
+        for val in new_role_values:
+            add_stmt = f"""
+                DO $$ BEGIN
+                    ALTER TYPE user_role ADD VALUE IF NOT EXISTS '{val}';
+                EXCEPTION WHEN others THEN NULL;
+                END $$;
+            """
+            try:
+                await conn.execute(text(add_stmt))
+                log.info("Enum value ensured: user_role.%s", val)
+            except Exception as e:
+                log.warning("Enum value add skipped (%s): %s", val, e)
 
         # Add new columns to users table
         column_migrations = [

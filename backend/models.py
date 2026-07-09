@@ -19,6 +19,8 @@ from enum import Enum as PyEnum
 
 class UserRole(str, PyEnum):
     admin = "admin"
+    pharmacist = "pharmacist"
+    cashier = "cashier"
     worker = "worker"
 
 
@@ -69,7 +71,7 @@ class User(Base):
     full_name = Column(String(200), nullable=False)
     email = Column(String(200))
     phone = Column(String(50))
-    role = Column(_pg_enum("admin", "worker", name="user_role"), default=UserRole.worker)
+    role = Column(_pg_enum("admin", "pharmacist", "cashier", "worker", name="user_role"), default=UserRole.worker)
     admin_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     is_active = Column(Boolean, default=True)
     is_default = Column(Boolean, default=False)       # True only for the seed admin account
