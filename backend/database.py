@@ -62,45 +62,42 @@ async def _run_column_migrations():
 
 async def _seed_default_admin():
     """Ensure exactly one default admin account (admin/admin123) exists.
-    This account is marked is_default=True and profile_complete=False.
-    It is purely a setup gateway — real operations require completing setup first.
+    Uses raw SQL to avoid SQLAlchemy enum type cast issues with PostgreSQL.
     """
-    from backend.models import User, UserRole
     from backend.auth import hash_password
 
-    async with async_session() as db:
-        result = await db.execute(
-            select(User).where(User.username == "admin")
+    password_hash = hash_password(ADMIN_DEFAULT_PASSWORD)
+
+    async with engine.begin() as conn:
+        # Check if admin exists
+        result = await conn.execute(
+            text("SELECT id, is_default, profile_complete FROM users WHERE username = 'admin'")
         )
-        existing = result.scalar_one_or_none()
+        existing = result.fetchone()
 
         if existing is None:
-            default_admin = User(
-                username="admin",
-                password_hash=hash_password(ADMIN_DEFAULT_PASSWORD),
-                full_name="Default Admin",
-                role=UserRole.admin,
-                is_active=True,
-                is_default=True,
-                profile_complete=False,
-            )
-            db.add(default_admin)
-            await db.commit()
+            await conn.execute(text("""
+                INSERT INTO users (
+                    id, username, password_hash, full_name,
+                    role, is_active, is_default, profile_complete,
+                    created_at, updated_at
+                ) VALUES (
+                    gen_random_uuid(), 'admin', :pwd, 'Default Admin',
+                    'admin'::user_role, true, true, false,
+                    NOW(), NOW()
+                )
+            """), {"pwd": password_hash})
             log.info("Default admin account seeded (admin / %s).", ADMIN_DEFAULT_PASSWORD)
         else:
-            # Ensure the existing "admin" user is flagged as the default seed
-            # (only applies to the original default — not a real admin who chose "admin" as username,
-            # but that's prevented by the setup wizard validation)
-            changed = False
-            if not existing.is_default:
-                existing.is_default = True
-                changed = True
-            # Only force profile_complete=False if it's still the seed (is_active=True and is_default)
-            if existing.is_default and existing.profile_complete:
-                existing.profile_complete = False
-                changed = True
-            if changed:
-                await db.commit()
-                log.info("Default admin account updated with setup flags.")
+            # Ensure the seed flags are correct
+            needs_update = (not existing.is_default) or existing.profile_complete
+            if needs_update:
+                await conn.execute(text("""
+                    UPDATE users
+                    SET is_default = true, profile_complete = false
+                    WHERE username = 'admin'
+                      AND (is_default = false OR profile_complete = true)
+                """))
+                log.info("Default admin account flags corrected.")
             else:
-                log.info("Default admin account already exists and is correctly configured.")
+                log.info("Default admin account already correctly configured.")
