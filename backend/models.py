@@ -287,3 +287,35 @@ class AuditLog(Base):
     details = Column(JSON)
     ip_address = Column(String(50))
     created_at = Column(DateTime(timezone=True), default=utcnow)
+
+
+class Feedback(Base):
+    __tablename__ = "feedbacks"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String(200), nullable=False)
+    email = Column(String(200))
+    message = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+
+
+class ServerLog(Base):
+    __tablename__ = "server_logs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    level = Column(String(20), default="INFO")
+    message = Column(Text, nullable=False)
+    ip_address = Column(String(50))
+    path = Column(String(500))
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+
+
+class OnlineSession(Base):
+    __tablename__ = "online_sessions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    ip_address = Column(String(50), nullable=False, index=True)
+    user_agent = Column(String(500))
+    path = Column(String(200))
+    last_ping = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    first_seen = Column(DateTime(timezone=True), default=utcnow)

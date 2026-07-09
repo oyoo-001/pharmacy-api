@@ -242,3 +242,100 @@ async def list_workers(
 @router.get("/me", response_model=UserResponse)
 async def get_me(user: User = Depends(get_current_user)):
     return user
+
+
+@router.get("/profile")
+async def get_profile(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Returns the current user's full profile including:
+    - Their own user record
+    - The admin who created them (for non-admin users)
+    - The pharmacy settings belonging to their admin
+    """
+    is_admin = _role_str(user) == "admin"
+    admin_id = user.admin_id if user.admin_id else user.id
+
+    # Fetch admin user record
+    admin_result = await db.execute(select(User).where(User.id == admin_id))
+    admin_user = admin_result.scalar_one_or_none()
+
+    # Fetch pharmacy settings for this tenant
+    settings_result = await db.execute(
+        select(PharmacySetting).where(PharmacySetting.admin_id == admin_id)
+    )
+    pharmacy = settings_result.scalar_one_or_none()
+
+    return {
+        "user": {
+            "id":             str(user.id),
+            "username":       user.username,
+            "full_name":      user.full_name,
+            "email":          user.email or "",
+            "phone":          user.phone or "",
+            "role":           _role_str(user),
+            "created_at":     user.created_at.isoformat() if user.created_at else "",
+            "last_login":     user.last_login.isoformat() if user.last_login else "",
+        },
+        "admin": {
+            "id":        str(admin_user.id) if admin_user else "",
+            "username":  admin_user.username if admin_user else "",
+            "full_name": admin_user.full_name if admin_user else "",
+            "email":     admin_user.email or "" if admin_user else "",
+            "phone":     admin_user.phone or "" if admin_user else "",
+        } if not is_admin else None,
+        "pharmacy": {
+            "name":             pharmacy.pharmacy_name or "" if pharmacy else "",
+            "address":          pharmacy.address or "" if pharmacy else "",
+            "phone":            pharmacy.phone or "" if pharmacy else "",
+            "email":            pharmacy.email or "" if pharmacy else "",
+            "currency_symbol":  pharmacy.currency_symbol or "KES" if pharmacy else "KES",
+            "tax_rate":         pharmacy.tax_rate or 0.16 if pharmacy else 0.16,
+        } if pharmacy else None,
+    }
+
+
+@router.put("/profile")
+async def update_profile(
+    data: dict,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Allow any user to update their own full_name, email, phone."""
+    allowed_fields = {"full_name", "email", "phone"}
+    changed = False
+    for field in allowed_fields:
+        if field in data and data[field] is not None:
+            setattr(user, field, str(data[field]).strip() or None)
+            changed = True
+    if changed:
+        await db.commit()
+    return {"success": True, "message": "Profile updated successfully."}
+
+
+@router.put("/change-password")
+async def change_password(
+    data: dict,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Allow any user to change their own password."""
+    current = data.get("current_password", "")
+    new_pw = data.get("new_password", "")
+
+    if not verify_password(current, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect.",
+        )
+    if len(new_pw) < 6:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be at least 6 characters.",
+        )
+
+    user.password_hash = hash_password(new_pw)
+    await db.commit()
+    return {"success": True, "message": "Password changed successfully."}
