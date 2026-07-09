@@ -1,108 +1,105 @@
-"""Web admin dashboard router — serves the status page at /"""
+"""
+Web admin dashboard router — PIN-protected status page at /
+"""
+import hashlib
+import hmac
 import uuid
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, HTTPException, Request
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, Query
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, delete
+from starlette.responses import RedirectResponse
+
+from backend.config import WEBPAGE_API_PIN, log
 from backend.database import get_db
 from backend.models import User, Feedback, ServerLog, OnlineSession
 
 router = APIRouter(tags=["Web"])
 
+# ── PIN protection helpers ────────────────────────────────────────────────────
 
-# ── API endpoints ───────────────────────────────────────────────────────
+_COOKIE_NAME = "web_session"
+_COOKIE_MAX_AGE = 7200
+_SERVER_SECRET = "pharmacy-web-dash-secret-2026"
 
-@router.get("/api/admin/stats")
-async def admin_stats(db: AsyncSession = Depends(get_db)):
-    """Dashboard stat cards data."""
-    users_count = await db.execute(select(func.count()).select_from(User))
-    feedbacks_count = await db.execute(select(func.count()).select_from(Feedback))
 
-    cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
-    online_count = await db.execute(
-        select(func.count()).select_from(OnlineSession).where(
-            OnlineSession.last_ping >= cutoff
-        )
+def _sign_pin(pin: str) -> str:
+    return hmac.new(_SERVER_SECRET.encode(), pin.encode(), hashlib.sha256).hexdigest()
+
+
+def _verify_cookie(cookie_val: Optional[str]) -> bool:
+    return bool(cookie_val) and cookie_val == _sign_pin(WEBPAGE_API_PIN)
+
+
+def _set_auth_cookie(response: Response):
+    response.set_cookie(
+        key=_COOKIE_NAME, value=_sign_pin(WEBPAGE_API_PIN),
+        max_age=_COOKIE_MAX_AGE, httponly=True, samesite="lax", path="/",
     )
 
-    return {
-        "total_users": users_count.scalar() or 0,
-        "online_ips": online_count.scalar() or 0,
-        "total_feedbacks": feedbacks_count.scalar() or 0,
-    }
+
+def _clear_auth_cookie(response: Response):
+    response.delete_cookie(_COOKIE_NAME, path="/")
 
 
-@router.get("/api/admin/feedbacks")
-async def admin_feedbacks(
-    db: AsyncSession = Depends(get_db),
-    limit: int = 100,
-):
-    result = await db.execute(
-        select(Feedback).order_by(Feedback.created_at.desc()).limit(limit)
-    )
-    items = result.scalars().all()
-    return [
-        {
-            "id": str(f.id),
-            "name": f.name,
-            "email": f.email or "",
-            "message": f.message,
-            "created_at": f.created_at.isoformat() if f.created_at else "",
-        }
-        for f in items
-    ]
+async def require_web_access(request: Request) -> None:
+    if not _verify_cookie(request.cookies.get(_COOKIE_NAME)):
+        raise HTTPException(status_code=401, detail="Unauthorized — PIN required")
 
 
-@router.get("/api/admin/logs")
-async def admin_logs(
-    db: AsyncSession = Depends(get_db),
-    limit: int = 200,
-):
-    result = await db.execute(
-        select(ServerLog).order_by(ServerLog.created_at.desc()).limit(limit)
-    )
-    items = result.scalars().all()
-    return [
-        {
-            "id": str(l.id),
-            "level": l.level,
-            "message": l.message,
-            "ip_address": l.ip_address or "",
-            "path": l.path or "",
-            "created_at": l.created_at.isoformat() if l.created_at else "",
-        }
-        for l in items
-    ]
+# ── PIN entry page ────────────────────────────────────────────────────────────
 
+_PIN_PAGE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Access Restricted</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',sans-serif;background:#0f172a;display:flex;align-items:center;justify-content:center;min-height:100vh}
+.card{background:#1e293b;border-radius:20px;padding:48px 40px;width:380px;box-shadow:0 25px 60px rgba(0,0,0,.5);text-align:center}
+.icon{font-size:48px;margin-bottom:12px}
+h1{color:#f1f5f9;font-size:22px;font-weight:700;margin-bottom:6px}
+p{color:#94a3b8;font-size:14px;margin-bottom:28px}
+input[type=password]{width:100%;padding:14px 16px;border:1.5px solid #334155;border-radius:12px;background:#0f172a;color:#f1f5f9;font-size:16px;text-align:center;letter-spacing:8px;outline:none;transition:border-color .2s}
+input[type=password]:focus{border-color:#6366f1}
+input[type=password]::placeholder{letter-spacing:0;color:#475569}
+.error{color:#f87171;font-size:13px;margin-top:12px;display:none}
+button{width:100%;margin-top:20px;padding:14px;border:none;border-radius:12px;background:linear-gradient(135deg,#6366f1,#818cf8);color:#fff;font-size:15px;font-weight:700;cursor:pointer;transition:opacity .2s}
+button:hover{opacity:.9}
+button:disabled{opacity:.5;cursor:not-allowed}
+</style>
+</head>
+<body>
+<div class=card>
+<div class=icon>🔒</div>
+<h1>Access Restricted</h1>
+<p>Enter the PIN to view the dashboard</p>
+<form id=pinForm>
+<input type=password id=pinInput placeholder="* * * *" maxlength=4 inputmode=numeric autocomplete=off>
+<div class=error id=errorMsg>Incorrect PIN. Try again.</div>
+<button type=submit id=submitBtn>Unlock</button>
+</form>
+</div>
+<script>
+const form=document.getElementById('pinForm');
+const input=document.getElementById('pinInput');
+const error=document.getElementById('errorMsg');
+const btn=document.getElementById('submitBtn');
+form.addEventListener('submit',async e=>{
+e.preventDefault();error.style.display='none';btn.disabled=true;btn.textContent='Checking…';
+const r=await fetch('/unlock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:input.value})});
+if(r.ok){window.location.href='/'}else{error.style.display='block';btn.disabled=false;btn.textContent='Unlock';input.value='';input.focus()}
+});
+</script>
+</body>
+</html>"""
 
-@router.delete("/api/admin/logs")
-async def clear_logs(db: AsyncSession = Depends(get_db)):
-    await db.execute(delete(ServerLog))
-    await db.commit()
-    return {"ok": True}
-
-
-@router.get("/api/admin/online")
-async def online_sessions(db: AsyncSession = Depends(get_db)):
-    cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
-    result = await db.execute(
-        select(OnlineSession).where(OnlineSession.last_ping >= cutoff)
-    )
-    items = result.scalars().all()
-    return [
-        {
-            "id": str(s.id),
-            "ip_address": s.ip_address,
-            "user_agent": s.user_agent or "",
-            "last_ping": s.last_ping.isoformat() if s.last_ping else "",
-            "first_seen": s.first_seen.isoformat() if s.first_seen else "",
-        }
-        for s in items
-    ]
-
-
-# ── Main HTML page ──────────────────────────────────────────────────────
+# ── Main dashboard HTML (from deployed version) ───────────────────────────────
 
 ADMIN_HTML = r"""<!DOCTYPE html>
 <html lang="en">
@@ -125,9 +122,11 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f1f5f9; disp
 
 /* ── Main ── */
 .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-.main header { padding: 20px 28px; background: #fff; border-bottom: 1px solid #e2e8f0; }
+.main header { padding: 20px 28px; background: #fff; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; }
 .main header h1 { font-size: 20px; font-weight: 700; }
 .main header p { font-size: 13px; color: #64748b; margin-top: 2px; }
+.logout-btn { background: transparent; border: 1px solid #ef4444; color: #ef4444; padding: 8px 18px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; }
+.logout-btn:hover { background: #ef4444; color: #fff; }
 .content { flex: 1; padding: 24px 28px; overflow-y: auto; }
 
 /* ── Tab pages ── */
@@ -171,7 +170,6 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f1f5f9; disp
 .log-entry .msg { color: #334155; }
 .log-wrap { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; max-height: 500px; overflow-y: auto; }
 
-/* ── Responsive ── */
 @media (max-width: 768px) {
   .sidebar { width: 60px; }
   .sidebar .brand span, .sidebar nav a span, .sidebar .footer { display: none; }
@@ -193,8 +191,11 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f1f5f9; disp
 
 <div class="main">
   <header>
-    <h1 id="pageTitle">Dashboard</h1>
-    <p id="pageSub">Server status &amp; analytics overview</p>
+    <div>
+      <h1 id="pageTitle">Dashboard</h1>
+      <p id="pageSub">Server status &amp; analytics overview</p>
+    </div>
+    <button class="logout-btn" onclick="fetch('/logout',{method:'POST'}).then(()=>window.location.href='/')">🚪 Logout</button>
   </header>
 
   <div class="content">
@@ -220,23 +221,23 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f1f5f9; disp
     <!-- ═══ LOGS ═══ -->
     <div id="tab-logs" class="tab-page">
       <div class="log-toolbar">
-        <button class="btn-primary" onclick="copyLogs()">Copy All</button>
-        <button class="btn-danger" onclick="clearLogs()">Clear</button>
-        <span style="font-size:12px;color:#94a3b8;margin-left:auto;" id="logCount"></span>
+        <button class="btn-primary" onclick="loadLogs()">&#x1F504; Refresh</button>
+        <button class="btn-danger" onclick="clearLogs()">&#x1F5D1; Clear All</button>
       </div>
-      <div class="log-wrap" id="logWrap"><div class="empty" style="padding:40px;text-align:center;color:#94a3b8;">Loading logs...</div></div>
+      <div class="log-wrap" id="logList"></div>
     </div>
 
   </div>
 </div>
 
 <script>
+// ── Tab switching ──
 function switchTab(name) {
-  document.querySelectorAll('.tab-page').forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('.sidebar nav a').forEach(a => a.classList.remove('active'));
+  document.querySelectorAll('.tab-page').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.sidebar nav a').forEach(el => el.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
   document.querySelector(`.sidebar nav a[onclick*="'${name}'"]`).classList.add('active');
-  const titles = { dashboard: ['Dashboard', 'Server status & analytics overview'], feedbacks: ['Feedbacks', 'User feedback & messages'], logs: ['Server Logs', 'Request logs with copy & clear'] };
+  const titles = { dashboard: ['Dashboard', 'Server status & analytics overview'], feedbacks: ['Feedbacks', 'User messages & inquiries'], logs: ['Server Logs', 'Request and error logs'] };
   document.getElementById('pageTitle').textContent = titles[name][0];
   document.getElementById('pageSub').textContent = titles[name][1];
   if (name === 'dashboard') loadDashboard();
@@ -244,58 +245,48 @@ function switchTab(name) {
   if (name === 'logs') loadLogs();
 }
 
-function escapeHtml(text) {
-  const d = document.createElement('div');
-  d.textContent = text;
-  return d.innerHTML;
-}
-
 // ── Dashboard ──
 async function loadDashboard() {
   try {
     const r = await fetch('/api/admin/stats');
+    if (!r.ok) { window.location.href = '/'; return; }
     const d = await r.json();
-    document.getElementById('stat-users').textContent = d.total_users;
-    document.getElementById('stat-online').textContent = d.online_ips;
-    document.getElementById('stat-feedbacks').textContent = d.total_feedbacks;
-  } catch(e) { console.error(e); }
-
+    document.getElementById('stat-users').textContent = d.total_users ?? '-';
+    document.getElementById('stat-online').textContent = d.online_ips ?? '-';
+    document.getElementById('stat-feedbacks').textContent = d.total_feedbacks ?? '-';
+  } catch(e) {}
   try {
     const r = await fetch('/api/admin/online');
-    const list = await r.json();
+    if (!r.ok) return;
+    const sessions = await r.json();
     const tbody = document.getElementById('onlineBody');
-    if (!list.length) { tbody.innerHTML = '<tr><td class="empty" colspan="3">No online sessions</td></tr>'; return; }
-    tbody.innerHTML = list.map(s => `<tr><td>${escapeHtml(s.ip_address)}</td><td style="font-size:12px;color:#64748b;">${escapeHtml(s.user_agent).slice(0,60)}</td><td style="font-size:12px;color:#94a3b8;">${new Date(s.last_ping).toLocaleString()}</td></tr>`).join('');
-  } catch(e) { console.error(e); }
+    if (!sessions || sessions.length === 0) { tbody.innerHTML = '<tr><td class="empty" colspan="3">No online sessions</td></tr>'; return; }
+    tbody.innerHTML = sessions.map(s => `<tr><td>${s.ip_address}</td><td>${(s.user_agent||'').substring(0,60)}</td><td>${(s.last_ping||'').substring(0,19).replace('T',' ')}</td></tr>`).join('');
+  } catch(e) {}
 }
 
 // ── Feedbacks ──
 async function loadFeedbacks() {
   try {
     const r = await fetch('/api/admin/feedbacks');
-    const list = await r.json();
-    const container = document.getElementById('feedbackList');
-    if (!list.length) { container.innerHTML = '<div class="table-wrap"><div class="empty">No feedbacks yet</div></div>'; return; }
-    container.innerHTML = list.map(f => `<div class="feedback-card"><div class="meta"><span class="name">${escapeHtml(f.name)}</span>${f.email ? ' &lt;'+escapeHtml(f.email)+'&gt;' : ''} &middot; ${new Date(f.created_at).toLocaleString()}</div><div class="msg">${escapeHtml(f.message)}</div></div>`).join('');
-  } catch(e) { console.error(e); }
+    if (!r.ok) return;
+    const items = await r.json();
+    const el = document.getElementById('feedbackList');
+    if (!items || items.length === 0) { el.innerHTML = '<div class="table-wrap"><table><tr><td class="empty">No feedbacks yet</td></tr></table></div>'; return; }
+    el.innerHTML = items.map(f => `<div class="feedback-card"><div class="meta">${(f.created_at||'').substring(0,19).replace('T',' ')}</div><div class="name">${f.name}</div>${f.email ? '<div class="meta">'+f.email+'</div>' : ''}<div class="msg">${f.message}</div></div>`).join('');
+  } catch(e) {}
 }
 
 // ── Logs ──
 async function loadLogs() {
   try {
-    const r = await fetch('/api/admin/logs?limit=200');
-    const list = await r.json();
-    const wrap = document.getElementById('logWrap');
-    document.getElementById('logCount').textContent = list.length + ' entries';
-    if (!list.length) { wrap.innerHTML = '<div class="empty" style="padding:40px;text-align:center;color:#94a3b8;">No server logs</div>'; return; }
-    wrap.innerHTML = list.map(l => `<div class="log-entry"><span class="time">${new Date(l.created_at).toLocaleString()}</span><span class="level ${l.level}">${l.level}</span><span class="msg">${escapeHtml(l.message)}</span></div>`).join('');
-  } catch(e) { console.error(e); }
-}
-
-function copyLogs() {
-  const entries = document.querySelectorAll('.log-entry .msg');
-  const texts = Array.from(entries).map(e => e.textContent).join('\n');
-  navigator.clipboard.writeText(texts).then(() => alert('Logs copied to clipboard!')).catch(() => alert('Failed to copy logs'));
+    const r = await fetch('/api/admin/logs');
+    if (!r.ok) return;
+    const items = await r.json();
+    const el = document.getElementById('logList');
+    if (!items || items.length === 0) { el.innerHTML = '<div class="table-wrap"><table><tr><td class="empty">No logs yet</td></tr></table></div>'; return; }
+    el.innerHTML = items.map(l => `<div class="log-entry"><span class="time">${(l.created_at||'').substring(11,19)}</span><span class="level ${l.level}">${l.level}</span><span class="msg">${l.message}</span></div>`).join('');
+  } catch(e) {}
 }
 
 async function clearLogs() {
@@ -318,9 +309,130 @@ loadDashboard();
 </html>"""
 
 
+# ── Routes ────────────────────────────────────────────────────────────────────
+
+
 @router.get("/", response_class=HTMLResponse)
-async def root_page():
-    return ADMIN_HTML
+async def root_page(request: Request):
+    if _verify_cookie(request.cookies.get(_COOKIE_NAME)):
+        return ADMIN_HTML
+    return _PIN_PAGE
 
 
+@router.post("/unlock")
+async def unlock(payload: dict, response: Response):
+    pin = payload.get("pin", "")
+    if pin == WEBPAGE_API_PIN:
+        _set_auth_cookie(response)
+        return {"ok": True}
+    raise HTTPException(status_code=403, detail="Invalid PIN")
 
+
+@router.post("/logout")
+async def logout(response: Response):
+    _clear_auth_cookie(response)
+    return {"ok": True}
+
+
+@router.get("/api/admin/stats")
+async def admin_stats(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    require_web_access(request)
+    users_count = await db.execute(select(func.count()).select_from(User))
+    feedbacks_count = await db.execute(select(func.count()).select_from(Feedback))
+
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
+    online_count = await db.execute(
+        select(func.count()).select_from(OnlineSession).where(
+            OnlineSession.last_ping >= cutoff
+        )
+    )
+
+    return {
+        "total_users": users_count.scalar() or 0,
+        "online_ips": online_count.scalar() or 0,
+        "total_feedbacks": feedbacks_count.scalar() or 0,
+    }
+
+
+@router.get("/api/admin/feedbacks")
+async def admin_feedbacks(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    limit: int = 100,
+):
+    require_web_access(request)
+    result = await db.execute(
+        select(Feedback).order_by(Feedback.created_at.desc()).limit(limit)
+    )
+    items = result.scalars().all()
+    return [
+        {
+            "id": str(f.id),
+            "name": f.name,
+            "email": f.email or "",
+            "message": f.message,
+            "created_at": f.created_at.isoformat() if f.created_at else "",
+        }
+        for f in items
+    ]
+
+
+@router.get("/api/admin/logs")
+async def admin_logs(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    limit: int = 200,
+):
+    require_web_access(request)
+    result = await db.execute(
+        select(ServerLog).order_by(ServerLog.created_at.desc()).limit(limit)
+    )
+    items = result.scalars().all()
+    return [
+        {
+            "id": str(l.id),
+            "level": l.level,
+            "message": l.message,
+            "ip_address": l.ip_address or "",
+            "path": l.path or "",
+            "created_at": l.created_at.isoformat() if l.created_at else "",
+        }
+        for l in items
+    ]
+
+
+@router.delete("/api/admin/logs")
+async def clear_logs(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    require_web_access(request)
+    await db.execute(delete(ServerLog))
+    await db.commit()
+    return {"ok": True}
+
+
+@router.get("/api/admin/online")
+async def online_sessions(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    require_web_access(request)
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
+    result = await db.execute(
+        select(OnlineSession).where(OnlineSession.last_ping >= cutoff)
+    )
+    items = result.scalars().all()
+    return [
+        {
+            "id": str(s.id),
+            "ip_address": s.ip_address,
+            "user_agent": s.user_agent or "",
+            "last_ping": s.last_ping.isoformat() if s.last_ping else "",
+            "first_seen": s.first_seen.isoformat() if s.first_seen else "",
+        }
+        for s in items
+    ]

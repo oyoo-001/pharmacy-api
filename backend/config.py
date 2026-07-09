@@ -25,6 +25,7 @@ JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "480"))
 APP_NAME = os.getenv("APP_NAME", "Kevin Odongo Pharmacy API")
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*")
 ADMIN_DEFAULT_PASSWORD = os.getenv("ADMIN_DEFAULT_PASSWORD", "admin123")
+WEBPAGE_API_PIN = os.getenv("WEBPAGE_API_PIN", "9198")
 PORT = int(os.getenv("PORT", "8000"))
 
 
