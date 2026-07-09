@@ -2,9 +2,9 @@ import uuid
 from datetime import datetime, timezone
 from sqlalchemy import (
     Column, String, Integer, Float, Boolean, Date, DateTime, Text,
-    ForeignKey, Enum, JSON, UniqueConstraint, Index
+    ForeignKey, JSON, UniqueConstraint, Index
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, ENUM as PgEnum
 from sqlalchemy.orm import relationship
 from backend.database import Base
 
@@ -48,6 +48,16 @@ class POStatus(str, PyEnum):
     cancelled = "cancelled"
 
 
+# ---------- PostgreSQL ENUM helpers ----------
+# Use create_type=False so SQLAlchemy never tries to CREATE TYPE —
+# the types already exist in the DB. The name= must match exactly
+# what PostgreSQL has (check with: SELECT typname FROM pg_type WHERE typcategory='E')
+
+def _pg_enum(*values, name: str):
+    """Return a PostgreSQL ENUM column type that references an existing DB type."""
+    return PgEnum(*values, name=name, create_type=False)
+
+
 # ---------- Models ----------
 
 class User(Base):
@@ -59,7 +69,7 @@ class User(Base):
     full_name = Column(String(200), nullable=False)
     email = Column(String(200))
     phone = Column(String(50))
-    role = Column(Enum(UserRole), default=UserRole.worker)
+    role = Column(_pg_enum("admin", "worker", name="user_role"), default=UserRole.worker)
     admin_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     is_active = Column(Boolean, default=True)
     is_default = Column(Boolean, default=False)       # True only for the seed admin account
@@ -141,7 +151,7 @@ class InventoryTransaction(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     admin_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
     medicine_id = Column(UUID(as_uuid=True), ForeignKey("medicines.id"), nullable=False)
-    transaction_type = Column(Enum(TransactionType), nullable=False)
+    transaction_type = Column(_pg_enum("purchase", "sale", "return", "adjustment", name="transactiontype"), nullable=False)
     quantity = Column(Integer, nullable=False)
     unit_price = Column(Float)
     total_price = Column(Float)
@@ -164,8 +174,8 @@ class Sale(Base):
     tax = Column(Float)
     discount = Column(Float)
     total = Column(Float)
-    payment_method = Column(Enum(PaymentMethod), default=PaymentMethod.cash)
-    payment_status = Column(Enum(PaymentStatus), default=PaymentStatus.completed)
+    payment_method = Column(_pg_enum("cash", "mobile_money", "credit", name="paymentmethod"), default=PaymentMethod.cash)
+    payment_status = Column(_pg_enum("completed", "refunded", "pending", name="paymentstatus"), default=PaymentStatus.completed)
     created_at = Column(DateTime(timezone=True), default=utcnow)
 
     items = relationship("SaleItem", back_populates="sale", cascade="all, delete-orphan")
@@ -234,7 +244,7 @@ class PurchaseOrder(Base):
     supplier_id = Column(UUID(as_uuid=True), ForeignKey("suppliers.id"))
     order_date = Column(Date)
     expected_delivery = Column(Date)
-    status = Column(Enum(POStatus), default=POStatus.pending)
+    status = Column(_pg_enum("pending", "approved", "received", "cancelled", name="postatus"), default=POStatus.pending)
     total_amount = Column(Float)
     notes = Column(Text)
     created_at = Column(DateTime(timezone=True), default=utcnow)

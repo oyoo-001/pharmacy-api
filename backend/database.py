@@ -42,22 +42,47 @@ async def init_db():
 
 async def _run_column_migrations():
     """
-    Safe ALTER TABLE migrations for columns added after initial deployment.
-    Each statement uses IF NOT EXISTS so they are idempotent.
+    Safe migrations for columns and types added after initial deployment.
+    All statements use IF NOT EXISTS / OR REPLACE so they are idempotent.
     """
-    migrations = [
-        # Added in setup-wizard release
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT FALSE",
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_complete BOOLEAN NOT NULL DEFAULT TRUE",
-    ]
     async with engine.begin() as conn:
-        for stmt in migrations:
+        # Ensure all enum types exist with the correct names
+        # (DO $$ block is idempotent — creates only if missing)
+        enum_migrations = [
+            ("user_role",       "admin, worker"),
+            ("transactiontype", "purchase, sale, return, adjustment"),
+            ("paymentmethod",   "cash, mobile_money, credit"),
+            ("paymentstatus",   "completed, refunded, pending"),
+            ("postatus",        "pending, approved, received, cancelled"),
+        ]
+        for type_name, values in enum_migrations:
+            quoted = ", ".join(f"'{v}'" for v in values.split(", "))
+            stmt = f"""
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = '{type_name}') THEN
+                        CREATE TYPE {type_name} AS ENUM ({quoted});
+                    END IF;
+                END $$;
+            """
             try:
                 await conn.execute(text(stmt))
-                log.info("Migration OK: %s", stmt[:60])
+                log.info("Enum type ensured: %s", type_name)
             except Exception as e:
-                log.warning("Migration skipped (%s): %s", stmt[:60], e)
-    log.info("Column migrations complete.")
+                log.warning("Enum type migration skipped (%s): %s", type_name, e)
+
+        # Add new columns to users table
+        column_migrations = [
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT FALSE",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_complete BOOLEAN NOT NULL DEFAULT TRUE",
+        ]
+        for stmt in column_migrations:
+            try:
+                await conn.execute(text(stmt))
+                log.info("Column migration OK: %s", stmt[:60])
+            except Exception as e:
+                log.warning("Column migration skipped (%s): %s", stmt[:60], e)
+
+    log.info("All migrations complete.")
 
 
 async def _seed_default_admin():
