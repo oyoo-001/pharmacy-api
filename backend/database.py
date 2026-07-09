@@ -35,7 +35,29 @@ async def init_db():
         await conn.run_sync(Base.metadata.create_all)
     log.info("Migration complete — all tables up to date.")
 
+    # Add new columns to existing tables if they were deployed before this version
+    await _run_column_migrations()
     await _seed_default_admin()
+
+
+async def _run_column_migrations():
+    """
+    Safe ALTER TABLE migrations for columns added after initial deployment.
+    Each statement uses IF NOT EXISTS so they are idempotent.
+    """
+    migrations = [
+        # Added in setup-wizard release
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_complete BOOLEAN NOT NULL DEFAULT TRUE",
+    ]
+    async with engine.begin() as conn:
+        for stmt in migrations:
+            try:
+                await conn.execute(text(stmt))
+                log.info("Migration OK: %s", stmt[:60])
+            except Exception as e:
+                log.warning("Migration skipped (%s): %s", stmt[:60], e)
+    log.info("Column migrations complete.")
 
 
 async def _seed_default_admin():
@@ -66,14 +88,19 @@ async def _seed_default_admin():
             await db.commit()
             log.info("Default admin account seeded (admin / %s).", ADMIN_DEFAULT_PASSWORD)
         else:
-            # Ensure existing seed account has the new columns set correctly
+            # Ensure the existing "admin" user is flagged as the default seed
+            # (only applies to the original default — not a real admin who chose "admin" as username,
+            # but that's prevented by the setup wizard validation)
             changed = False
-            if not hasattr(existing, 'is_default') or existing.is_default is None:
+            if not existing.is_default:
                 existing.is_default = True
                 changed = True
-            if not hasattr(existing, 'profile_complete') or existing.profile_complete is None:
+            # Only force profile_complete=False if it's still the seed (is_active=True and is_default)
+            if existing.is_default and existing.profile_complete:
                 existing.profile_complete = False
                 changed = True
             if changed:
                 await db.commit()
-            log.info("Default admin account already exists.")
+                log.info("Default admin account updated with setup flags.")
+            else:
+                log.info("Default admin account already exists and is correctly configured.")
