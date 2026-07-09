@@ -2,8 +2,9 @@ services:
   - type: web
     name: pharmacy-api
     env: python
-    buildCommand: pip install -r /requirements.txt
-    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    pythonVersion: 3.12.3
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: DB_PASSWORD
         sync: false
