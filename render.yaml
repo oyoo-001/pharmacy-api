@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: pharmacy-api
+    env: python
+    buildCommand: pip install -r /requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_USER
+        value: avnadmin
+      - key: DB_HOST
+        value: agriconnect-oyoookoth42-489d.h.aivencloud.com
+      - key: DB_PORT
+        value: "25592"
+      - key: DB_NAME
+        value: pharmacy-db
+      - key: DB_SSLMODE
+        value: require
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: ADMIN_DEFAULT_PASSWORD
+        value: admin123
+    staticPublishPath: ./updates
