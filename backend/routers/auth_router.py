@@ -19,14 +19,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from backend.database import get_db
-from backend.models import User, UserRole, PharmacySetting
+from backend.models import User, PharmacySetting
 from backend.schemas import (
     LoginRequest, TokenResponse, UserCreate, UserResponse,
     SetupRequest, SetupResponse,
 )
 from backend.auth import (
     hash_password, verify_password, create_access_token,
-    get_current_user, require_admin, get_tenant_id,
+    get_current_user, require_admin, get_tenant_id, _role_str,
 )
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -65,7 +65,7 @@ def _build_token_response(user: User, requires_setup: bool = False) -> TokenResp
     token_data = {
         "sub": str(user.id),
         "username": user.username,
-        "role": user.role.value,
+        "role": _role_str(user),
         "admin_id": tenant_id,
         "requires_setup": requires_setup,
     }
@@ -75,7 +75,7 @@ def _build_token_response(user: User, requires_setup: bool = False) -> TokenResp
         user_id=str(user.id),
         username=user.username,
         full_name=user.full_name,
-        role=user.role,
+        role=_role_str(user),
         admin_id=tenant_id,
         requires_setup=requires_setup,
     )
@@ -115,7 +115,7 @@ async def verify_token(user: User = Depends(get_current_user)):
         "valid": True,
         "user_id": str(user.id),
         "username": user.username,
-        "role": user.role.value,
+        "role": _role_str(user),
         "admin_id": str(user.admin_id) if user.admin_id else str(user.id),
         "requires_setup": requires_setup,
     }
@@ -149,14 +149,14 @@ async def setup_account(
             detail=f"Username '{req.new_username}' is already taken. Choose a different one.",
         )
 
-    # Create the real admin account
+    # Create the real admin account — pass role as string for PgEnum compatibility
     new_admin = User(
         username=req.new_username,
         password_hash=hash_password(req.new_password),
         full_name=req.full_name,
         email=req.email,
         phone=req.phone,
-        role=UserRole.admin,
+        role="admin",
         is_active=True,
         is_default=False,
         profile_complete=True,
@@ -183,7 +183,7 @@ async def setup_account(
     token_data = {
         "sub": str(new_admin.id),
         "username": new_admin.username,
-        "role": new_admin.role.value,
+        "role": _role_str(new_admin),
         "admin_id": str(new_admin.id),
         "requires_setup": False,
     }
@@ -194,7 +194,7 @@ async def setup_account(
         user_id=str(new_admin.id),
         username=new_admin.username,
         full_name=new_admin.full_name,
-        role=new_admin.role,
+        role=_role_str(new_admin),
         admin_id=str(new_admin.id),
         requires_setup=False,
     )
@@ -216,8 +216,8 @@ async def register_worker(
         full_name=req.full_name,
         email=req.email,
         phone=req.phone,
-        role=req.role,
-        admin_id=admin.id if admin.role == UserRole.admin else admin.admin_id,
+        role=req.role.value if hasattr(req.role, "value") else str(req.role),
+        admin_id=admin.id if _role_str(admin) == "admin" else admin.admin_id,
         is_default=False,
         profile_complete=True,
     )

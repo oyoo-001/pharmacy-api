@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional
+from typing import Optional, Union
 from backend.models import UserRole
 
 
@@ -13,14 +13,18 @@ class LoginRequest(BaseModel):
 
 
 class TokenResponse(BaseModel):
+    """
+    role is str (not UserRole) because PostgreSQL ENUM returns plain strings
+    via asyncpg and we don't want Pydantic to reject "admin"/"worker" as str.
+    """
     access_token: str
     token_type: str = "bearer"
     user_id: str
     username: str
     full_name: str
-    role: UserRole
+    role: str                      # plain str — "admin" or "worker"
     admin_id: Optional[str] = None
-    requires_setup: bool = False   # True when logged in with the default seed account
+    requires_setup: bool = False
 
 
 # Setup wizard — called once to graduate the default account into a real admin
@@ -39,7 +43,7 @@ class SetupResponse(BaseModel):
     user_id: str
     username: str
     full_name: str
-    role: UserRole
+    role: str
     admin_id: str
     requires_setup: bool = False
 
@@ -47,13 +51,14 @@ class SetupResponse(BaseModel):
 class TokenData(BaseModel):
     user_id: Optional[str] = None
     username: Optional[str] = None
-    role: Optional[UserRole] = None
+    role: Optional[str] = None
     admin_id: Optional[str] = None
 
 
 # ---------- Users ----------
 
 class UserCreate(BaseModel):
+    """Input schema — validate role as enum."""
     username: str = Field(min_length=3, max_length=100)
     password: str = Field(min_length=6)
     full_name: str = Field(min_length=1, max_length=200)
@@ -63,12 +68,17 @@ class UserCreate(BaseModel):
 
 
 class UserResponse(BaseModel):
+    """
+    Output schema — role is str because PgEnum returns str from asyncpg.
+    is_default and profile_complete may be None on old rows before migration;
+    default to safe values.
+    """
     id: uuid.UUID
     username: str
     full_name: str
     email: Optional[str] = None
     phone: Optional[str] = None
-    role: UserRole
+    role: str
     admin_id: Optional[uuid.UUID] = None
     is_active: bool
     is_default: bool = False
@@ -76,8 +86,7 @@ class UserResponse(BaseModel):
     created_at: datetime
     last_login: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class UserUpdate(BaseModel):

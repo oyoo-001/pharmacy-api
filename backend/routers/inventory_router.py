@@ -8,7 +8,7 @@ from sqlalchemy import select, and_, or_
 from pydantic import BaseModel
 
 from backend.database import get_db
-from backend.models import Medicine, InventoryTransaction, User, TransactionType
+from backend.models import Medicine, InventoryTransaction, User
 from backend.auth import get_current_user, get_tenant_id, require_profile_complete
 
 router = APIRouter(prefix="/inventory", tags=["Inventory"])

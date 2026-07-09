@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 from pydantic import BaseModel, Field
 
 from backend.database import get_db
-from backend.models import Sale, SaleItem, Medicine, InventoryTransaction, TransactionType, User
+from backend.models import Sale, SaleItem, Medicine, InventoryTransaction, User
 from backend.auth import get_current_user, get_tenant_id, require_profile_complete
 
 router = APIRouter(prefix="/sales", tags=["Sales"])
@@ -185,7 +185,7 @@ async def create_sale(
         tx = InventoryTransaction(
             admin_id=tenant_id,
             medicine_id=item_data.medicine_id,
-            transaction_type=TransactionType.sale,
+            transaction_type="sale",
             quantity=-item_data.quantity,
             unit_price=item_data.unit_price,
             total_price=item_data.quantity * item_data.unit_price,

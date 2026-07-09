@@ -79,10 +79,16 @@ async def get_current_user(
     return user
 
 
+def _role_str(user: User) -> str:
+    """Safely get role as string whether it's a str or enum."""
+    role = user.role
+    return role.value if hasattr(role, "value") else str(role)
+
+
 # ---------- Role Checkers ----------
 
 def require_admin(user: User = Depends(get_current_user)) -> User:
-    if user.role.value != "admin":
+    if _role_str(user) != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required",
