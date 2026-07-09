@@ -7,7 +7,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from backend.config import APP_NAME, CORS_ORIGINS, PORT, log
 from backend.database import init_db
-from backend.routers import auth_router, dashboard_router, sync_router
+from backend.routers import (
+    auth_router, dashboard_router, sync_router,
+    medicines_router, suppliers_router, sales_router,
+    prescriptions_router, settings_router, inventory_router,
+)
 
 
 @asynccontextmanager
@@ -36,6 +40,12 @@ app.add_middleware(
 app.include_router(auth_router.router)
 app.include_router(dashboard_router.router)
 app.include_router(sync_router.router)
+app.include_router(medicines_router.router)
+app.include_router(suppliers_router.router)
+app.include_router(sales_router.router)
+app.include_router(prescriptions_router.router)
+app.include_router(settings_router.router)
+app.include_router(inventory_router.router)
 
 
 @app.get("/")
