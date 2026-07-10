@@ -112,3 +112,33 @@ class DashboardStats(BaseModel):
     total_prescriptions: int
     total_workers: int
     expired_medicines: int
+
+
+# ---------- App Updates ----------
+
+class AppUpdateCreate(BaseModel):
+    version: str = Field(min_length=3, max_length=20, pattern=r"^\d+\.\d+\.\d+$")
+    bundle_url: str = Field(max_length=500)
+    release_notes: str = ""
+    min_app_version: str = Field(default="1.0.0", max_length=20)
+
+
+class AppUpdateResponse(BaseModel):
+    id: uuid.UUID
+    version: str
+    bundle_url: str
+    release_date: datetime
+    release_notes: str
+    min_app_version: str
+    is_active: bool
+
+    model_config = {"from_attributes": True}
+
+
+class UpdateMetadataResponse(BaseModel):
+    """Public metadata served at /updates/metadata.json — no auth needed."""
+    version: str
+    bundle_url: str
+    release_date: datetime
+    release_notes: str
+    min_app_version: str

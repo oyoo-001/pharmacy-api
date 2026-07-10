@@ -353,3 +353,17 @@ class Message(Base):
         Index("idx_messages_conversation_created", "conversation_id", "created_at"),
         Index("idx_messages_unread", "conversation_id", "is_read"),
     )
+
+
+class AppUpdate(Base):
+    """Published application update releases."""
+    __tablename__ = "app_updates"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    version = Column(String(20), nullable=False, unique=True, index=True)
+    bundle_url = Column(String(500), nullable=False)
+    release_date = Column(DateTime(timezone=True), default=utcnow)
+    release_notes = Column(Text, default="")
+    min_app_version = Column(String(20), default="1.0.0")
+    is_active = Column(Boolean, default=True)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)

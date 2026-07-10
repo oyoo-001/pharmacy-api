@@ -14,7 +14,7 @@ from backend.routers import (
     auth_router, dashboard_router, sync_router,
     medicines_router, suppliers_router, sales_router,
     prescriptions_router, settings_router, inventory_router,
-    feedback_router, web_router, messaging_router,
+    feedback_router, web_router, messaging_router, update_router,
 )
 
 
@@ -85,15 +85,16 @@ app.include_router(inventory_router.router)
 app.include_router(feedback_router.router)
 app.include_router(web_router.router)
 app.include_router(messaging_router.router)
+app.include_router(update_router.router)
 
 
-# ── Mount updates/ as static files for the updater ─────────────────────
-updates_dir = os.path.join(os.path.dirname(__file__), "..", "updates")
-if os.path.isdir(updates_dir):
-    app.mount("/updates", StaticFiles(directory=updates_dir), name="updates")
-    log.info("Updates directory mounted at /updates")
-else:
-    log.warning("Updates directory not found at %s", updates_dir)
+# ── Mount update bundles as static files ──────────────────────────────
+updates_dir = os.path.join(os.path.dirname(__file__), "updates")
+if not os.path.isdir(updates_dir):
+    os.makedirs(updates_dir, exist_ok=True)
+    log.info("Created updates directory at %s", updates_dir)
+app.mount("/updates/bundles", StaticFiles(directory=updates_dir), name="update_bundles")
+log.info("Update bundles directory mounted at /updates/bundles")
 
 
 # ── Server log helper ──────────────────────────────────────────────────
