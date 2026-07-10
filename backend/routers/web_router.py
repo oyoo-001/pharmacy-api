@@ -170,6 +170,34 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f1f5f9; disp
 .log-entry .msg { color: #334155; }
 .log-wrap { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; max-height: 500px; overflow-y: auto; }
 
+/* ── Update tab ── */
+.upload-zone { border: 2px dashed #818cf8; border-radius: 14px; padding: 48px 24px; text-align: center; cursor: pointer; background: #f8fafc; transition: background .15s, border-color .15s; }
+.upload-zone.drag-over { background: #eef2ff; border-color: #4f46e5; }
+.upload-zone .icon { font-size: 40px; margin-bottom: 12px; }
+.upload-zone .hint { font-size: 14px; color: #64748b; }
+.upload-zone .hint strong { color: #4f46e5; cursor: pointer; }
+.upload-zone input[type=file] { display: none; }
+.release-notes { width: 100%; margin-top: 16px; padding: 10px 14px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 13px; font-family: inherit; resize: vertical; min-height: 70px; color: #334155; }
+.release-notes:focus { outline: none; border-color: #818cf8; }
+.upload-actions { display: flex; gap: 10px; margin-top: 12px; align-items: center; }
+.file-chosen { font-size: 13px; color: #475569; flex: 1; }
+.progress-bar-wrap { margin-top: 14px; background: #e2e8f0; border-radius: 99px; height: 8px; overflow: hidden; display: none; }
+.progress-bar { height: 8px; background: #6366f1; width: 0%; transition: width .3s; border-radius: 99px; }
+.current-release { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin-top: 28px; }
+.current-release h3 { font-size: 14px; font-weight: 700; margin-bottom: 14px; }
+.release-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid #f1f5f9; font-size: 13px; }
+.release-row:last-child { border-bottom: none; }
+.badge-version { background: #eef2ff; color: #4f46e5; font-weight: 700; padding: 3px 10px; border-radius: 99px; font-size: 12px; }
+.badge-current { background: #dcfce7; color: #16a34a; font-weight: 700; padding: 3px 10px; border-radius: 99px; font-size: 12px; }
+.release-meta { color: #94a3b8; font-size: 12px; margin-left: auto; }
+.btn-sm-danger { padding: 5px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; border: none; cursor: pointer; background: #fee2e2; color: #ef4444; }
+.btn-sm-danger:hover { background: #fecaca; }
+.toast { position: fixed; bottom: 28px; right: 28px; background: #1e293b; color: #f8fafc; padding: 12px 20px; border-radius: 10px; font-size: 13px; font-weight: 500; opacity: 0; transform: translateY(10px); transition: opacity .25s, transform .25s; pointer-events: none; z-index: 9999; }
+.toast.show { opacity: 1; transform: translateY(0); }
+.toast.success { background: #16a34a; }
+.toast.error { background: #dc2626; }
+
+/* ── Responsive ── */
 @media (max-width: 768px) {
   .sidebar { width: 60px; }
   .sidebar .brand span, .sidebar nav a span, .sidebar .footer { display: none; }
@@ -185,6 +213,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f1f5f9; disp
     <a class="active" onclick="switchTab('dashboard')">&#x1F4CA; <span>Dashboard</span></a>
     <a onclick="switchTab('feedbacks')">&#x1F4AC; <span>Feedbacks</span></a>
     <a onclick="switchTab('logs')">&#x1F4BB; <span>Logs</span></a>
+    <a onclick="switchTab('updates')">&#x1F4E6; <span>Updates</span></a>
   </nav>
   <div class="footer">Kevin Odongo Pharmacy API</div>
 </div>
@@ -227,6 +256,29 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f1f5f9; disp
       <div class="log-wrap" id="logList"></div>
     </div>
 
+    <!-- ═══ UPDATES ═══ -->
+    <div id="tab-updates" class="tab-page">
+      <div class="upload-zone" id="uploadZone">
+        <div class="icon">&#x1F4E6;</div>
+        <p style="font-size:16px;font-weight:700;color:#1e293b;margin-bottom:6px;">Upload Update Bundle</p>
+        <p class="hint">Drag &amp; drop your <strong>.zip</strong> file here, or <strong onclick="document.getElementById('zipFileInput').click()">browse</strong></p>
+        <input type="file" id="zipFileInput" accept=".zip">
+      </div>
+      <textarea class="release-notes" id="releaseNotes" placeholder="Release notes (optional) — what changed in this version?"></textarea>
+      <div class="upload-actions">
+        <span class="file-chosen" id="fileChosen">No file selected</span>
+        <button class="btn-primary" onclick="uploadUpdate()">&#x2B06; Upload to Cloud</button>
+      </div>
+      <div class="progress-bar-wrap" id="progressWrap">
+        <div class="progress-bar" id="progressBar"></div>
+      </div>
+
+      <div class="current-release" id="currentRelease">
+        <h3>&#x1F4CB; Release History</h3>
+        <div id="releaseList"><div style="color:#94a3b8;font-size:13px;">Loading...</div></div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -237,12 +289,34 @@ function switchTab(name) {
   document.querySelectorAll('.sidebar nav a').forEach(el => el.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
   document.querySelector(`.sidebar nav a[onclick*="'${name}'"]`).classList.add('active');
-  const titles = { dashboard: ['Dashboard', 'Server status & analytics overview'], feedbacks: ['Feedbacks', 'User messages & inquiries'], logs: ['Server Logs', 'Request and error logs'] };
+  const titles = {
+    dashboard: ['Dashboard', 'Server status & analytics overview'],
+    feedbacks: ['Feedbacks', 'User messages & inquiries'],
+    logs: ['Server Logs', 'Request and error logs'],
+    updates: ['Updates', 'Upload a new .zip release bundle to Backblaze B2 storage'],
+  };
   document.getElementById('pageTitle').textContent = titles[name][0];
   document.getElementById('pageSub').textContent = titles[name][1];
   if (name === 'dashboard') loadDashboard();
   if (name === 'feedbacks') loadFeedbacks();
   if (name === 'logs') loadLogs();
+  if (name === 'updates') loadUpdates();
+}
+
+function escapeHtml(text) {
+  const d = document.createElement('div');
+  d.textContent = text;
+  return d.innerHTML;
+}
+
+// ── Toast ──
+function showToast(msg, type = '') {
+  let t = document.getElementById('globalToast');
+  if (!t) { t = document.createElement('div'); t.id = 'globalToast'; t.className = 'toast'; document.body.appendChild(t); }
+  t.textContent = msg;
+  t.className = 'toast show ' + type;
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.className = 'toast', 3000);
 }
 
 // ── Dashboard ──
@@ -295,6 +369,151 @@ async function clearLogs() {
     await fetch('/api/admin/logs', { method: 'DELETE' });
     loadLogs();
   } catch(e) { alert('Failed to clear logs'); }
+}
+
+// ── Updates ──
+let _selectedFile = null;
+
+function loadUpdates() {
+  _setupDropZone();
+  _fetchReleaseMeta();
+}
+
+function _setupDropZone() {
+  const zone = document.getElementById('uploadZone');
+  if (zone._initDone) return;
+  zone._initDone = true;
+
+  const input = document.getElementById('zipFileInput');
+
+  zone.addEventListener('click', (e) => {
+    if (e.target.tagName === 'STRONG') return; // handled by inline onclick
+    input.click();
+  });
+
+  input.addEventListener('change', () => {
+    if (input.files[0]) _setFile(input.files[0]);
+  });
+
+  zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    const f = e.dataTransfer.files[0];
+    if (f) _setFile(f);
+  });
+}
+
+function _setFile(f) {
+  if (!f.name.toLowerCase().endsWith('.zip')) {
+    showToast('Only .zip files are accepted.', 'error');
+    return;
+  }
+  _selectedFile = f;
+  document.getElementById('fileChosen').textContent = f.name + ' (' + (f.size / 1024 / 1024).toFixed(2) + ' MB)';
+  document.getElementById('uploadZone').style.borderColor = '#10b981';
+}
+
+async function uploadUpdate() {
+  if (!_selectedFile) { showToast('Please select a .zip file first.', 'error'); return; }
+
+  const notes = document.getElementById('releaseNotes').value.trim();
+  const fd = new FormData();
+  fd.append('file', _selectedFile);
+  fd.append('release_notes', notes);
+
+  const progressWrap = document.getElementById('progressWrap');
+  const progressBar  = document.getElementById('progressBar');
+  progressWrap.style.display = 'block';
+  progressBar.style.width = '10%';
+
+  try {
+    // Simulate progress while uploading
+    let pct = 10;
+    const ticker = setInterval(() => {
+      pct = Math.min(pct + 5, 85);
+      progressBar.style.width = pct + '%';
+    }, 300);
+
+    const resp = await fetch('/api/admin/updates', { method: 'POST', body: fd });
+    clearInterval(ticker);
+    progressBar.style.width = '100%';
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+      throw new Error(err.detail || 'Upload failed');
+    }
+
+    const result = await resp.json();
+    showToast('Version ' + result.version + ' uploaded successfully!', 'success');
+
+    // Reset
+    _selectedFile = null;
+    document.getElementById('fileChosen').textContent = 'No file selected';
+    document.getElementById('releaseNotes').value = '';
+    document.getElementById('zipFileInput').value = '';
+    document.getElementById('uploadZone').style.borderColor = '';
+
+    setTimeout(() => { progressWrap.style.display = 'none'; progressBar.style.width = '0%'; }, 1200);
+    _fetchReleaseMeta();
+
+  } catch(e) {
+    progressWrap.style.display = 'none';
+    progressBar.style.width = '0%';
+    showToast(e.message, 'error');
+  }
+}
+
+async function _fetchReleaseMeta() {
+  const container = document.getElementById('releaseList');
+  try {
+    const r = await fetch('/api/admin/updates');
+    if (!r.ok) throw new Error(await r.text());
+    const meta = await r.json();
+
+    const rows = [];
+
+    if (meta.version) {
+      rows.push(`
+        <div class="release-row">
+          <span class="badge-version">${escapeHtml(meta.version)}</span>
+          <span class="badge-current">current</span>
+          <span style="font-size:13px;color:#334155;flex:1;">${escapeHtml(meta.release_notes || '—')}</span>
+          <span class="release-meta">${meta.uploaded_at ? new Date(meta.uploaded_at).toLocaleString() : ''}</span>
+          <button class="btn-sm-danger" onclick="deleteRelease('${escapeHtml(meta.version)}')">Delete</button>
+        </div>`);
+    }
+
+    (meta.history || []).forEach(h => {
+      rows.push(`
+        <div class="release-row">
+          <span class="badge-version">${escapeHtml(h.version)}</span>
+          <span style="font-size:13px;color:#334155;flex:1;">${escapeHtml(h.release_notes || '—')}</span>
+          <span class="release-meta">${h.uploaded_at ? new Date(h.uploaded_at).toLocaleString() : ''}</span>
+          <button class="btn-sm-danger" onclick="deleteRelease('${escapeHtml(h.version)}')">Delete</button>
+        </div>`);
+    });
+
+    container.innerHTML = rows.length
+      ? rows.join('')
+      : '<div style="color:#94a3b8;font-size:13px;padding:12px 0;">No releases uploaded yet.</div>';
+
+  } catch(e) {
+    container.innerHTML = `<div style="color:#ef4444;font-size:13px;">Failed to load releases: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function deleteRelease(version) {
+  if (!confirm('Delete release ' + version + '? This cannot be undone.')) return;
+  try {
+    const r = await fetch('/api/admin/updates/' + encodeURIComponent(version), { method: 'DELETE' });
+    if (!r.ok) throw new Error((await r.json()).detail || 'Delete failed');
+    showToast('Release ' + version + ' deleted.', 'success');
+    _fetchReleaseMeta();
+  } catch(e) {
+    showToast(e.message, 'error');
+  }
 }
 
 // ── Auto-refresh ──

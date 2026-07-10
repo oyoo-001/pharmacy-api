@@ -16,6 +16,7 @@ from backend.routers import (
     prescriptions_router, settings_router, inventory_router,
     feedback_router, web_router, messaging_router, update_router,
 )
+from backend.routers import updates_router
 
 
 @asynccontextmanager
@@ -83,6 +84,7 @@ app.include_router(prescriptions_router.router)
 app.include_router(settings_router.router)
 app.include_router(inventory_router.router)
 app.include_router(feedback_router.router)
+app.include_router(updates_router.router)
 app.include_router(web_router.router)
 app.include_router(messaging_router.router)
 app.include_router(update_router.router)
