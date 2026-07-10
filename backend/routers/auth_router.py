@@ -9,12 +9,14 @@ Default admin flow
 3. The only thing a default-account token may do is call POST /auth/setup.
    Every other endpoint rejects it with 403.
 4. POST /auth/setup creates a brand-new real admin under a fresh UUID, seeds
-   PharmacySettings for them, marks the seed account is_active=False so it can
-   never be used again, and returns a fresh token for the new admin.
+    PharmacySettings for them, keeps the seed account active so other
+    fresh installs can still use it, and returns a fresh token for the new admin.
 """
 import uuid
+from typing import Optional
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -25,8 +27,9 @@ from backend.schemas import (
     SetupRequest, SetupResponse,
 )
 from backend.auth import (
-    hash_password, verify_password, create_access_token,
-    get_current_user, require_admin, get_tenant_id, _role_str,
+    security, hash_password, verify_password, create_access_token,
+    decode_access_token, get_current_user, get_default_admin,
+    require_admin, get_tenant_id, _role_str,
 )
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -121,16 +124,37 @@ async def verify_token(user: User = Depends(get_current_user)):
     }
 
 
+async def _get_setup_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Try JWT first, fall back to the default admin account."""
+    if credentials is not None:
+        payload = decode_access_token(credentials.credentials)
+        if payload is not None and payload.get("sub"):
+            try:
+                result = await db.execute(
+                    select(User).where(User.id == uuid.UUID(payload["sub"]))
+                )
+                user = result.scalar_one_or_none()
+                if user is not None and user.is_active:
+                    return user
+            except Exception:
+                pass
+    # Fallback: return the default admin account
+    return await get_default_admin(db)
+
+
 @router.post("/setup", response_model=SetupResponse)
 async def setup_account(
     req: SetupRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(_get_setup_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Called once after first login with the default account.
     Creates a brand-new real admin with the provided credentials and profile.
-    The seed (default) account is permanently deactivated.
+    The default seed account stays active so other fresh installs can use it.
     """
     # Only the default seed account (or incomplete profile) may call this
     is_default = getattr(current_user, "is_default", False)
@@ -175,9 +199,9 @@ async def setup_account(
     )
     db.add(pharmacy)
 
-    # Do NOT deactivate the seed account — it stays active so other
-    # fresh installs can still use admin/admin123 to set up their own account.
-    # We only mark it profile_complete=False so it always redirects to setup.
+    # Keep the seed account active (is_active=True, profile_complete=False)
+    # so other fresh installs can still use admin/admin123 to set up.
+    current_user.profile_complete = False
     await db.commit()
 
     # Issue fresh token for the new admin

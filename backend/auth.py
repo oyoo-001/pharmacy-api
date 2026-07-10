@@ -79,6 +79,22 @@ async def get_current_user(
     return user
 
 
+async def get_default_admin(
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Return the default seed admin account. Used by /auth/setup when no JWT is provided."""
+    result = await db.execute(
+        select(User).where(User.is_default == True)  # noqa: E712
+    )
+    user = result.scalar_one_or_none()
+    if user is None or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Default admin account not available",
+        )
+    return user
+
+
 def _role_str(user: User) -> str:
     """Safely get role as string whether it's a str or enum."""
     role = user.role
