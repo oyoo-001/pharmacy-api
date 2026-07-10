@@ -14,7 +14,7 @@ from backend.routers import (
     auth_router, dashboard_router, sync_router,
     medicines_router, suppliers_router, sales_router,
     prescriptions_router, settings_router, inventory_router,
-    feedback_router, web_router,
+    feedback_router, web_router, messaging_router,
 )
 
 
@@ -84,6 +84,7 @@ app.include_router(settings_router.router)
 app.include_router(inventory_router.router)
 app.include_router(feedback_router.router)
 app.include_router(web_router.router)
+app.include_router(messaging_router.router)
 
 
 # ── Mount updates/ as static files for the updater ─────────────────────

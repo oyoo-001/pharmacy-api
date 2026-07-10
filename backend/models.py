@@ -319,3 +319,37 @@ class OnlineSession(Base):
     path = Column(String(200))
     last_ping = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
     first_seen = Column(DateTime(timezone=True), default=utcnow)
+
+
+class Conversation(Base):
+    __tablename__ = "conversations"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    admin_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    subject = Column(String(200))
+    status = Column(String(20), default="active")
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("admin_id", "user_id", name="uq_conversation_pair"),
+        Index("idx_conversations_admin_updated", "admin_id", "updated_at"),
+    )
+
+
+class Message(Base):
+    __tablename__ = "messages"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    conversation_id = Column(UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False, index=True)
+    sender_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    sender_role = Column(String(20), nullable=False)
+    content = Column(Text, nullable=False)
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        Index("idx_messages_conversation_created", "conversation_id", "created_at"),
+        Index("idx_messages_unread", "conversation_id", "is_read"),
+    )
