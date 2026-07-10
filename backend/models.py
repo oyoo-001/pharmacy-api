@@ -176,8 +176,8 @@ class Sale(Base):
     tax = Column(Float)
     discount = Column(Float)
     total = Column(Float)
-    payment_method = Column(_pg_enum("cash", "mobile_money", "credit", name="paymentmethod"), default=PaymentMethod.cash)
-    payment_status = Column(_pg_enum("completed", "refunded", "pending", name="paymentstatus"), default=PaymentStatus.completed)
+    payment_method = Column(_pg_enum("cash", "mobile_money", "credit", name="payment_method"), default=PaymentMethod.cash)
+    payment_status = Column(_pg_enum("completed", "refunded", "pending", name="payment_status"), default=PaymentStatus.completed)
     created_at = Column(DateTime(timezone=True), default=utcnow)
 
     items = relationship("SaleItem", back_populates="sale", cascade="all, delete-orphan")
