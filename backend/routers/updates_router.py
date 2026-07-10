@@ -5,26 +5,32 @@ Storage layout in B2:
     desktop-builds/{version}/client-desktop.zip   ← the build bundle
     metadata.json                                  ← current + history manifest
 
-Desktop clients hit GET /updates/check?version=X to discover new releases and
-receive a 15-minute pre-signed download URL generated on demand.
+Auth strategy:
+    - Dashboard-facing endpoints (list, upload, delete, download) use PIN-based
+      cookie auth, matching the web_router pattern (no JWT needed).
+    - The /check endpoint is public — polled by the desktop client.
 """
 import io
 import json
 import os
 import zipfile
 from datetime import datetime, timezone
-from typing import Optional
 
 import boto3
 from botocore.client import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, status
-
-from backend.auth import require_admin
-from backend.models import User
+from fastapi import APIRouter, HTTPException, Request, UploadFile, File, Form, Query, status
 
 router = APIRouter(prefix="/api/admin/updates", tags=["Updates"])
+
+# ── Cookie auth — reuse web_router's verified cookie logic ───────────────────
+
+def _require_web_access(request: Request) -> None:
+    """Raise 401 if the PIN cookie is absent or invalid."""
+    from backend.routers.web_router import _COOKIE_NAME, _verify_cookie  # noqa: PLC0415
+    if not _verify_cookie(request.cookies.get(_COOKIE_NAME)):
+        raise HTTPException(status_code=401, detail="Unauthorized — PIN required")
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
@@ -198,8 +204,9 @@ def _extract_version_from_zip(data: bytes) -> str:
 # ── API endpoints ─────────────────────────────────────────────────────────────
 
 @router.get("")
-async def list_updates(_admin: User = Depends(require_admin)) -> dict:
+async def list_updates(request: Request) -> dict:
     """Return the current release manifest (version + history) from B2."""
+    _require_web_access(request)
     client = _get_b2_client()
     bucket = _bucket_name()
     try:
@@ -213,20 +220,14 @@ async def list_updates(_admin: User = Depends(require_admin)) -> dict:
 
 @router.post("")
 async def upload_update(
+    request: Request,
     file: UploadFile = File(...),
     release_notes: str = Form(""),
-    _admin: User = Depends(require_admin),
 ) -> dict:
     """
     Accept a .zip upload, push it to B2, and update the release manifest.
-
-    Steps:
-    1. Validate the file is a non-empty .zip archive.
-    2. Extract the version string from the embedded VERSION file.
-    3. Upload to desktop-builds/{version}/client-desktop.zip via boto3.
-    4. Generate a 15-minute pre-signed URL as the initial download_url.
-    5. Update metadata.json with the new release and push it to B2.
     """
+    _require_web_access(request)
     if not file.filename or not file.filename.lower().endswith(".zip"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -332,12 +333,12 @@ async def check_for_update(
 @router.get("/download/{version}")
 async def get_download_url(
     version: str,
-    _admin: User = Depends(require_admin),
+    request: Request,
 ) -> dict:
     """
-    Admin-only endpoint to regenerate a 15-minute pre-signed download URL
-    for any specific release version.
+    Regenerate a 15-minute pre-signed download URL for any specific release version.
     """
+    _require_web_access(request)
     url: str = get_client_download_url(version)
     return {
         "version": version,
@@ -349,12 +350,12 @@ async def get_download_url(
 @router.delete("/{version}")
 async def delete_update(
     version: str,
-    _admin: User = Depends(require_admin),
+    request: Request,
 ) -> dict:
     """
     Delete a release from B2 and remove it from the manifest.
-    If the deleted version was the current latest, the manifest is cleared.
     """
+    _require_web_access(request)
     client = _get_b2_client()
     bucket = _bucket_name()
     key = _BUILD_KEY_TEMPLATE.format(version=version)
