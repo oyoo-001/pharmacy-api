@@ -149,7 +149,7 @@ def _first(lst) -> Optional[str]:
 
 _GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta/"
-    "models/gemini-2.0-flash:generateContent"
+    "models/gemini-2.5-flash:generateContent"
 )
 
 _ANALYSIS_PROMPT = """\
