@@ -700,6 +700,44 @@ input:focus,textarea:focus,select:focus{border-color:#6366f1;background:#fff;}
          animation:spin .6s linear infinite;vertical-align:middle;margin-right:6px;}
 @keyframes spin{to{transform:rotate(360deg)}}
 .hint{font-size:11px;color:#94a3b8;margin-top:4px;}
+
+/* ── AI scan area ─────────────────────────────────────────────── */
+.ai-section{margin-bottom:20px;padding:18px;border:2px dashed #c7d2fe;
+            border-radius:14px;background:#f5f3ff;text-align:center;}
+.ai-section p{font-size:13px;color:#6366f1;font-weight:600;margin-bottom:12px;}
+.ai-btns{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}
+.ai-btn{display:inline-flex;align-items:center;gap:6px;padding:10px 18px;
+        border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;
+        border:2px solid transparent;transition:all .2s;}
+.ai-btn.upload{background:#6366f1;color:#fff;}
+.ai-btn.upload:hover{background:#4f46e5;}
+.ai-btn.camera{background:#fff;color:#6366f1;border-color:#c7d2fe;}
+.ai-btn.camera:hover{background:#eef2ff;border-color:#6366f1;}
+.ai-btn:disabled{opacity:.4;cursor:not-allowed;}
+.ai-btn .loader{display:none;width:14px;height:14px;border:2px solid #fff;
+                border-top-color:transparent;border-radius:50%;
+                animation:spin .6s linear infinite;}
+.ai-btn.loading .loader{display:inline-block;}
+.ai-btn.loading .btn-icon{display:none;}
+#previewImg{max-width:100%;max-height:120px;border-radius:8px;margin-top:10px;
+            display:none;box-shadow:0 2px 8px rgba(0,0,0,.1);}
+.ai-status{margin-top:10px;font-size:12px;color:#6366f1;font-weight:600;display:none;}
+
+/* ── Camera modal ─────────────────────────────────────────────── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;
+               align-items:center;justify-content:center;z-index:999;}
+.modal-overlay.show{display:flex;}
+.modal-box{background:#fff;border-radius:16px;padding:24px;width:90%;max-width:380px;
+           text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.25);}
+.modal-box h3{font-size:16px;color:#0f172a;margin-bottom:12px;}
+.modal-box video{width:100%;border-radius:10px;background:#000;margin-bottom:14px;}
+.modal-btns{display:flex;gap:10px;justify-content:center;}
+.modal-btns button{padding:10px 20px;border-radius:10px;font-size:13px;font-weight:700;
+                   border:none;cursor:pointer;}
+.modal-btns .capture{background:#6366f1;color:#fff;}
+.modal-btns .capture:hover{background:#4f46e5;}
+.modal-btns .cancel{background:#f1f5f9;color:#475569;}
+.modal-btns .cancel:hover{background:#e2e8f0;}
 </style>
 </head>
 <body>
@@ -708,8 +746,24 @@ input:focus,textarea:focus,select:focus{border-color:#6366f1;background:#fff;}
     <div class="dot">💊</div>
     <div>
       <h1>Add Medicine</h1>
-      <p>Scan or type the drug name to auto-fill</p>
+      <p>Upload a photo or type the drug name to auto-fill</p>
     </div>
+  </div>
+
+  <!-- ── AI image scan section ─────────────────────────────────── -->
+  <div class="ai-section" id="aiSection">
+    <p>📸 Scan medicine package with AI</p>
+    <div class="ai-btns">
+      <button type="button" class="ai-btn upload" id="uploadBtn" onclick="document.getElementById('fileInput').click()">
+        <span class="btn-icon">📤</span><span class="loader"></span> Upload Photo
+      </button>
+      <button type="button" class="ai-btn camera" id="cameraBtn" onclick="openCamera()">
+        <span class="btn-icon">📷</span><span class="loader"></span> Take Photo
+      </button>
+    </div>
+    <input type="file" id="fileInput" accept="image/*" style="display:none">
+    <img id="previewImg" alt="Preview">
+    <div class="ai-status" id="aiStatus">🤖 Analyzing with AI...</div>
   </div>
 
   <form id="addForm">
@@ -772,12 +826,26 @@ input:focus,textarea:focus,select:focus{border-color:#6366f1;background:#fff;}
   <div class="status" id="statusBox"></div>
 </div>
 
+<!-- ── Camera modal ──────────────────────────────────────────────── -->
+<div class="modal-overlay" id="cameraModal">
+  <div class="modal-box">
+    <h3>📷 Take a Photo</h3>
+    <video id="cameraVideo" autoplay playsinline></video>
+    <canvas id="cameraCanvas" style="display:none"></canvas>
+    <div class="modal-btns">
+      <button type="button" class="cancel" onclick="closeCamera()">Cancel</button>
+      <button type="button" class="capture" onclick="capturePhoto()">📸 Capture</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ── Read token from URL: /addmedicine?token=<JWT> ─────────────────────────
 const params   = new URLSearchParams(location.search);
 const jwtToken = params.get('token') || '';
 let sessionToken = '';
 let pharmacyId   = '';
+let cameraStream = null;
 
 async function initSession() {
   if (!jwtToken) {
@@ -797,6 +865,138 @@ async function initSession() {
   }
 }
 
+// ── AI image analysis ────────────────────────────────────────────────────
+const fileInput  = document.getElementById('fileInput');
+const previewImg = document.getElementById('previewImg');
+const aiStatus   = document.getElementById('aiStatus');
+const uploadBtn  = document.getElementById('uploadBtn');
+const cameraBtn  = document.getElementById('cameraBtn');
+
+fileInput.addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  showPreview(file);
+  analyzeImage(file);
+});
+
+function showPreview(file) {
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    previewImg.src = ev.target.result;
+    previewImg.style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+}
+
+async function analyzeImage(file) {
+  const btn = uploadBtn;
+  btn.classList.add('loading');
+  btn.disabled = true;
+  cameraBtn.disabled = true;
+  aiStatus.style.display = 'block';
+  aiStatus.textContent = '🤖 Analyzing with AI...';
+  aiStatus.style.color = '#6366f1';
+
+  try {
+    const base64 = await fileToBase64(file);
+    const mime   = file.type || 'image/jpeg';
+
+    const r = await fetch('/api/medicine/analyze-image', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + jwtToken,
+      },
+      body: JSON.stringify({ image_base64: base64, mime_type: mime }),
+    });
+
+    const data = await r.json();
+
+    if (!r.ok || data.error) {
+      throw new Error(data.error || 'Analysis failed');
+    }
+
+    // Auto-fill form fields from Gemini response
+    if (data.name)        document.getElementById('drugName').value       = data.name;
+    if (data.category)    document.getElementById('description').value    = (document.getElementById('description').value ? document.getElementById('description').value + '\n' : '') + 'Category: ' + data.category;
+    if (data.description) document.getElementById('description').value    = (document.getElementById('description').value ? document.getElementById('description').value + '\n' : '') + data.description;
+    if (data.batch_number) document.getElementById('batchNumber').value  = data.batch_number;
+    if (data.expiry_date)  document.getElementById('expiryDate').value   = data.expiry_date;
+    if (data.buying_price)  document.getElementById('buyingPrice').value  = data.buying_price;
+    if (data.selling_price) document.getElementById('sellingPrice').value = data.selling_price;
+    if (data.quantity)      document.getElementById('quantity').value     = data.quantity;
+    if (data.reorder_level) document.getElementById('reorderLevel').value = data.reorder_level;
+
+    aiStatus.textContent = '✅ AI analysis complete — fields auto-filled!';
+    aiStatus.style.color = '#16a34a';
+  } catch(err) {
+    aiStatus.textContent = '❌ ' + err.message;
+    aiStatus.style.color = '#dc2626';
+  } finally {
+    btn.classList.remove('loading');
+    btn.disabled = false;
+    cameraBtn.disabled = false;
+  }
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      // Strip "data:image/...;base64," prefix
+      const base64 = result.split(',')[1] || result;
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// ── Camera ────────────────────────────────────────────────────────────────
+async function openCamera() {
+  const modal = document.getElementById('cameraModal');
+  const video = document.getElementById('cameraVideo');
+  try {
+    cameraStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+    });
+    video.srcObject = cameraStream;
+    modal.classList.add('show');
+  } catch(err) {
+    showStatus('error', 'Camera access denied or not available: ' + err.message);
+  }
+}
+
+function closeCamera() {
+  const modal = document.getElementById('cameraModal');
+  const video = document.getElementById('cameraVideo');
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(t => t.stop());
+    cameraStream = null;
+  }
+  video.srcObject = null;
+  modal.classList.remove('show');
+}
+
+async function capturePhoto() {
+  const video  = document.getElementById('cameraVideo');
+  const canvas = document.getElementById('cameraCanvas');
+  canvas.width  = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+
+  canvas.toBlob(async function(blob) {
+    closeCamera();
+    if (!blob) return;
+    showPreview(blob);
+    // Rename the blob so it has a mime type
+    const file = new File([blob], 'camera_capture.jpg', { type: 'image/jpeg' });
+    await analyzeImage(file);
+  }, 'image/jpeg', 0.92);
+}
+
+// ── Form submission (unchanged) ──────────────────────────────────────────
 document.getElementById('addForm').addEventListener('submit', async function(e) {
   e.preventDefault();
 
@@ -837,19 +1037,18 @@ document.getElementById('addForm').addEventListener('submit', async function(e) 
       throw new Error(data.detail || 'Submission failed');
     }
 
-    // Now update the form fields with the data we need to fill manually
-    // (openFDA fills name/category/description; the rest stays as user entered)
     showStatus('success',
       '✅ ' + data.message + '\n\nPlease update the pricing and stock details in the desktop app.');
 
     btn.innerHTML = '✅ Medicine Added!';
     btn.disabled  = false;
 
-    // Optionally reset form after 5 s
     setTimeout(() => {
       document.getElementById('addForm').reset();
       btn.innerHTML = '💊 Add Medicine';
       document.getElementById('statusBox').style.display = 'none';
+      previewImg.style.display = 'none';
+      aiStatus.style.display = 'none';
     }, 6000);
 
   } catch(err) {
