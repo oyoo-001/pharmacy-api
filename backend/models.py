@@ -327,6 +327,22 @@ class MpesaTransaction(Base):
     updated_at   = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
+class PaymentSettings(Base):
+    """Per-admin Paystack credentials — each pharmacy has its own keys."""
+    __tablename__ = "payment_settings"
+
+    id                   = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    admin_id             = Column(UUID(as_uuid=True), ForeignKey("users.id"),
+                                   unique=True, nullable=False, index=True)
+    paystack_secret_key  = Column(String(200), nullable=True)
+    paystack_public_key  = Column(String(200), nullable=True)
+    is_live              = Column(Boolean, default=True)   # True = live, False = test
+    created_at           = Column(DateTime(timezone=True), default=utcnow)
+    updated_at           = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    admin = relationship("User", foreign_keys=[admin_id])
+
+
 class OnlineSession(Base):
     __tablename__ = "online_sessions"
 

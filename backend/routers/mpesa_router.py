@@ -24,7 +24,7 @@ from sqlalchemy import select
 
 from backend.config import PAYSTACK_SECRET_KEY, log
 from backend.database import get_db
-from backend.models import MpesaTransaction, User
+from backend.models import MpesaTransaction, PaymentSettings, User
 from backend.auth import require_profile_complete, get_tenant_id
 
 router = APIRouter(prefix="/mpesa", tags=["M-Pesa"])
@@ -69,14 +69,34 @@ class VerifyResponse(BaseModel):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _auth_headers() -> dict:
-    key = PAYSTACK_SECRET_KEY
+async def _get_tenant_secret_key(admin_id: uuid.UUID, db: AsyncSession) -> str:
+    """
+    Return the Paystack secret key for this admin.
+    Falls back to the global PAYSTACK_SECRET_KEY env var if no per-tenant key is set.
+    """
+    result = await db.execute(
+        select(PaymentSettings).where(PaymentSettings.admin_id == admin_id)
+    )
+    ps = result.scalar_one_or_none()
+    key = ps.paystack_secret_key if ps else None
+
+    if not key:
+        # Fall back to server-level key (useful for development / migration)
+        key = PAYSTACK_SECRET_KEY
+
     if not key:
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="PAYSTACK_SECRET_KEY is not configured on the server.",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Paystack is not configured for your account. "
+                "Go to Settings → Payment and enter your Paystack secret key."
+            ),
         )
-    return {**_PAYSTACK_HEADERS, "Authorization": f"Bearer {key}"}
+    return key
+
+
+def _auth_headers_with_key(secret_key: str) -> dict:
+    return {**_PAYSTACK_HEADERS, "Authorization": f"Bearer {secret_key}"}
 
 
 def _normalize_phone(raw: str) -> str:
@@ -130,6 +150,7 @@ async def initiate_charge(
     """
     phone           = _normalize_phone(req.phone_number)   # returns +254XXXXXXXXX
     admin_id        = get_tenant_id(user)
+    secret_key      = await _get_tenant_secret_key(admin_id, db)
     amount_subunits = int(round(req.amount * 100))
     reference       = f"PHARM-{uuid.uuid4().hex[:12].upper()}"
 
@@ -139,7 +160,7 @@ async def initiate_charge(
         "currency":     "KES",
         "reference":    reference,
         "mobile_money": {
-            "phone":    phone,          # E.164 with + e.g. +254742041208
+            "phone":    phone,
             "provider": "mpesa",
         },
     }
@@ -150,7 +171,8 @@ async def initiate_charge(
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
-                _CHARGE_URL, json=payload, headers=_auth_headers()
+                _CHARGE_URL, json=payload,
+                headers=_auth_headers_with_key(secret_key)
             )
             data = resp.json()
     except httpx.RequestError as exc:
@@ -223,11 +245,12 @@ async def verify_charge(
             message   = f"Payment {tx.status}.",
         )
 
-    # Poll Paystack
-    url = _VERIFY_URL.format(reference=reference)
+    # Poll Paystack using this admin's key
+    url        = _VERIFY_URL.format(reference=reference)
+    secret_key = await _get_tenant_secret_key(tx.admin_id, db)
     try:
         async with httpx.AsyncClient(timeout=20) as client:
-            resp = await client.get(url, headers=_auth_headers())
+            resp = await client.get(url, headers=_auth_headers_with_key(secret_key))
             data = resp.json()
     except httpx.RequestError as exc:
         log.warning("Paystack verify request error: %s", exc)
