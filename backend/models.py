@@ -310,6 +310,23 @@ class ServerLog(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow)
 
 
+class MpesaTransaction(Base):
+    """Records every M-Pesa STK Push attempt initiated via Paystack."""
+    __tablename__ = "mpesa_transactions"
+
+    id           = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    admin_id     = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    reference    = Column(String(100), unique=True, nullable=False, index=True)
+    email        = Column(String(200), nullable=False)
+    phone_number = Column(String(50),  nullable=False)
+    amount       = Column(Float, nullable=False)
+    currency     = Column(String(10),  default="KES", nullable=False)
+    status       = Column(String(20),  default="pending", nullable=False)
+    paystack_data = Column(JSON, nullable=True)
+    created_at   = Column(DateTime(timezone=True), default=utcnow)
+    updated_at   = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 class OnlineSession(Base):
     __tablename__ = "online_sessions"
 

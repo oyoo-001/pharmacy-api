@@ -37,3 +37,5 @@ def build_db_url(driver: str) -> str:
 
 DATABASE_URL = os.getenv("DATABASE_URL") or build_db_url("asyncpg")
 DATABASE_URL_SYNC = os.getenv("DATABASE_URL_SYNC") or build_db_url("psycopg2")
+
+PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY", "")

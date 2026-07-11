@@ -17,6 +17,7 @@ from backend.routers import (
     feedback_router, web_router, messaging_router, update_router,
 )
 from backend.routers import updates_router
+from backend.routers import mpesa_router
 
 
 @asynccontextmanager
@@ -85,6 +86,7 @@ app.include_router(settings_router.router)
 app.include_router(inventory_router.router)
 app.include_router(feedback_router.router)
 app.include_router(updates_router.router)
+app.include_router(mpesa_router.router)
 app.include_router(web_router.router)
 app.include_router(messaging_router.router)
 app.include_router(update_router.router)
