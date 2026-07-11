@@ -44,103 +44,97 @@ async def _run_column_migrations():
     """
     Safe migrations for columns and types added after initial deployment.
     All statements use IF NOT EXISTS / OR REPLACE so they are idempotent.
+
+    Each statement runs in its own transaction so that a failure in one
+    does not poison the PostgreSQL transaction and block subsequent ones.
     """
-    async with engine.begin() as conn:
-        # Ensure all enum types exist with the correct names
-        # (DO $$ block is idempotent — creates only if missing)
-        enum_migrations = [
-            ("user_role",       "admin, pharmacist, cashier, worker"),
-            ("transactiontype", "purchase, sale, return, adjustment"),
-            ("paymentmethod",   "cash, mobile_money, credit"),
-            ("paymentstatus",   "completed, refunded, pending"),
-            ("postatus",        "pending, approved, received, cancelled"),
-        ]
-        for type_name, values in enum_migrations:
-            quoted = ", ".join(f"'{v}'" for v in values.split(", "))
-            # Create type if it doesn't exist
-            stmt = f"""
-                DO $$ BEGIN
-                    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = '{type_name}') THEN
-                        CREATE TYPE {type_name} AS ENUM ({quoted});
-                    END IF;
-                END $$;
-            """
-            try:
-                await conn.execute(text(stmt))
-                log.info("Enum type ensured: %s", type_name)
-            except Exception as e:
-                log.warning("Enum type migration skipped (%s): %s", type_name, e)
+    all_stmts: list[str] = []
 
-        # Add new enum values to existing user_role type (idempotent)
-        new_role_values = ["pharmacist", "cashier"]
-        for val in new_role_values:
-            add_stmt = f"""
-                DO $$ BEGIN
-                    ALTER TYPE user_role ADD VALUE IF NOT EXISTS '{val}';
-                EXCEPTION WHEN others THEN NULL;
-                END $$;
-            """
-            try:
-                await conn.execute(text(add_stmt))
-                log.info("Enum value ensured: user_role.%s", val)
-            except Exception as e:
-                log.warning("Enum value add skipped (%s): %s", val, e)
+    # ── Enum types ────────────────────────────────────────────────────────────
+    enum_migrations = [
+        ("user_role",       "admin, pharmacist, cashier, worker"),
+        ("transactiontype", "purchase, sale, return, adjustment"),
+        ("paymentmethod",   "cash, mobile_money, credit"),
+        ("paymentstatus",   "completed, refunded, pending"),
+        ("postatus",        "pending, approved, received, cancelled"),
+    ]
+    for type_name, values in enum_migrations:
+        quoted = ", ".join(f"'{v}'" for v in values.split(", "))
+        all_stmts.append(f"""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = '{type_name}') THEN
+                    CREATE TYPE {type_name} AS ENUM ({quoted});
+                END IF;
+            END $$;
+        """)
 
-        # Add new columns to users table
-        column_migrations = [
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT FALSE",
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_complete BOOLEAN NOT NULL DEFAULT TRUE",
-            # medicines.session_token — added in v1.0.3 for mobile scan sessions
-            "ALTER TABLE medicines ADD COLUMN IF NOT EXISTS session_token VARCHAR(200)",
-            # Create index on session_token if column was just added
-            "CREATE INDEX IF NOT EXISTS idx_medicines_session_token ON medicines(session_token)",
-            # payment_settings table — per-tenant Paystack credentials
-            """CREATE TABLE IF NOT EXISTS payment_settings (
-                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                admin_id UUID NOT NULL UNIQUE REFERENCES users(id),
-                paystack_secret_key VARCHAR(200),
-                paystack_public_key VARCHAR(200),
-                is_live BOOLEAN DEFAULT TRUE,
-                created_at TIMESTAMPTZ DEFAULT NOW(),
-                updated_at TIMESTAMPTZ DEFAULT NOW()
-            )""",
-            "CREATE INDEX IF NOT EXISTS idx_payment_settings_admin ON payment_settings(admin_id)",
-            # mpesa_transactions table
-            """CREATE TABLE IF NOT EXISTS mpesa_transactions (
-                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                admin_id UUID NOT NULL REFERENCES users(id),
-                reference VARCHAR(100) NOT NULL UNIQUE,
-                email VARCHAR(200) NOT NULL,
-                phone_number VARCHAR(50) NOT NULL,
-                amount FLOAT NOT NULL,
-                currency VARCHAR(10) DEFAULT 'KES' NOT NULL,
-                status VARCHAR(20) DEFAULT 'pending' NOT NULL,
-                paystack_data JSONB,
-                created_at TIMESTAMPTZ DEFAULT NOW(),
-                updated_at TIMESTAMPTZ DEFAULT NOW()
-            )""",
-            "CREATE INDEX IF NOT EXISTS idx_mpesa_tx_admin ON mpesa_transactions(admin_id)",
-            "CREATE INDEX IF NOT EXISTS idx_mpesa_tx_ref ON mpesa_transactions(reference)",
-            # mobile_sync_sessions table — for /addmedicine page
-            """CREATE TABLE IF NOT EXISTS mobile_sync_sessions (
-                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                token VARCHAR(200) NOT NULL UNIQUE,
-                admin_id UUID NOT NULL REFERENCES users(id),
-                status VARCHAR(20) DEFAULT 'pending' NOT NULL,
-                medicine_id UUID REFERENCES medicines(id),
-                error_message TEXT,
-                created_at TIMESTAMPTZ DEFAULT NOW(),
-                updated_at TIMESTAMPTZ DEFAULT NOW()
-            )""",
-            "CREATE INDEX IF NOT EXISTS idx_sync_sessions_token ON mobile_sync_sessions(token)",
-            "CREATE INDEX IF NOT EXISTS idx_sync_sessions_admin ON mobile_sync_sessions(admin_id)",
-        ]
-        for stmt in column_migrations:
-            try:
+    # New enum values for user_role
+    for val in ("pharmacist", "cashier"):
+        all_stmts.append(f"""
+            DO $$ BEGIN
+                ALTER TYPE user_role ADD VALUE IF NOT EXISTS '{val}';
+            EXCEPTION WHEN others THEN NULL;
+            END $$;
+        """)
+
+    # ── Column / table migrations ─────────────────────────────────────────────
+    all_stmts += [
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_complete BOOLEAN NOT NULL DEFAULT TRUE",
+        # medicines.session_token — added in v1.0.3 for mobile scan sessions
+        "ALTER TABLE medicines ADD COLUMN IF NOT EXISTS session_token VARCHAR(200)",
+        "CREATE INDEX IF NOT EXISTS idx_medicines_session_token ON medicines(session_token)",
+        # payment_settings table — per-tenant Paystack credentials
+        """CREATE TABLE IF NOT EXISTS payment_settings (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            admin_id UUID NOT NULL UNIQUE REFERENCES users(id),
+            paystack_secret_key VARCHAR(200),
+            paystack_public_key VARCHAR(200),
+            is_live BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_payment_settings_admin ON payment_settings(admin_id)",
+        # mpesa_transactions table
+        """CREATE TABLE IF NOT EXISTS mpesa_transactions (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            admin_id UUID NOT NULL REFERENCES users(id),
+            reference VARCHAR(100) NOT NULL UNIQUE,
+            email VARCHAR(200) NOT NULL,
+            phone_number VARCHAR(50) NOT NULL,
+            amount FLOAT NOT NULL,
+            currency VARCHAR(10) DEFAULT 'KES' NOT NULL,
+            status VARCHAR(20) DEFAULT 'pending' NOT NULL,
+            paystack_data JSONB,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_mpesa_tx_admin ON mpesa_transactions(admin_id)",
+        "CREATE INDEX IF NOT EXISTS idx_mpesa_tx_ref ON mpesa_transactions(reference)",
+        # mobile_sync_sessions table — for /addmedicine page
+        """CREATE TABLE IF NOT EXISTS mobile_sync_sessions (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            token VARCHAR(200) NOT NULL UNIQUE,
+            admin_id UUID NOT NULL REFERENCES users(id),
+            status VARCHAR(20) DEFAULT 'pending' NOT NULL,
+            medicine_id UUID REFERENCES medicines(id),
+            error_message TEXT,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_sync_sessions_token ON mobile_sync_sessions(token)",
+        "CREATE INDEX IF NOT EXISTS idx_sync_sessions_admin ON mobile_sync_sessions(admin_id)",
+    ]
+
+    # Execute each statement in its own transaction so one failure cannot
+    # poison the rest (PostgreSQL aborts the whole tx after any error).
+    for stmt in all_stmts:
+        try:
+            async with engine.begin() as conn:
                 await conn.execute(text(stmt))
-                log.info("Column migration OK: %s", stmt[:60])
-            except Exception as e:
-                log.warning("Column migration skipped (%s): %s", stmt[:60], e)
+            log.info("Migration OK: %s", stmt.strip()[:60])
+        except Exception as e:
+            log.warning("Migration skipped (%s): %s", stmt.strip()[:60], e)
 
     log.info("All migrations complete.")
 
