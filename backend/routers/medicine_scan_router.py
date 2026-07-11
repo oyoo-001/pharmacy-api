@@ -149,7 +149,7 @@ def _first(lst) -> Optional[str]:
 
 _GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta/"
-    "models/gemini-2.5-flash:generateContent"
+    "models/gemini-2.5-flash-preview:generateContent"
 )
 
 _ANALYSIS_PROMPT = """\
@@ -165,9 +165,9 @@ anything you cannot determine):
   "description":  "string — short description of what the medicine is for",
   "batch_number": "string — batch/lot number if visible",
   "expiry_date":  "string — expiry date in YYYY-MM-DD format if visible",
-  "buying_price": 0,
-  "selling_price": 0,
-  "quantity":     0,
+  "buying_price": "string - possible buying price in kenyan shilling",
+  "selling_price":"string - possible selling price to aim for a profit in kenyan market",
+  "quantity":     10,
   "reorder_level": 10
 }
 
