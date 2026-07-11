@@ -106,28 +106,51 @@ class PharmacySetting(Base):
 class Medicine(Base):
     __tablename__ = "medicines"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    admin_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
-    name = Column(String(200), nullable=False)
-    category = Column(String(100))
-    batch_number = Column(String(100))
-    expiry_date = Column(Date)
-    buying_price = Column(Float)
-    selling_price = Column(Float)
-    quantity = Column(Integer, default=0)
+    id            = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    admin_id      = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    # session_token links to a MobileSyncSession that created this record via scan
+    session_token = Column(String(200), nullable=True, index=True)
+    name          = Column(String(200), nullable=False)
+    category      = Column(String(100))
+    batch_number  = Column(String(100))
+    expiry_date   = Column(Date)
+    buying_price  = Column(Float, default=0.0)
+    selling_price = Column(Float, default=0.0)
+    quantity      = Column(Integer, default=0)
     reorder_level = Column(Integer, default=10)
-    description = Column(Text)
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime(timezone=True), default=utcnow)
-    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    description   = Column(Text)
+    is_active     = Column(Boolean, default=True)
+    created_at    = Column(DateTime(timezone=True), default=utcnow)
+    updated_at    = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     __table_args__ = (
         UniqueConstraint("admin_id", "batch_number"),
-        Index("idx_medicines_name", "admin_id", "name"),
+        Index("idx_medicines_name",     "admin_id", "name"),
         Index("idx_medicines_category", "admin_id", "category"),
-        Index("idx_medicines_expiry", "admin_id", "expiry_date"),
-        Index("idx_medicines_stock", "admin_id", "quantity"),
+        Index("idx_medicines_expiry",   "admin_id", "expiry_date"),
+        Index("idx_medicines_stock",    "admin_id", "quantity"),
     )
+
+
+class MobileSyncSession(Base):
+    """
+    Tracks a single 'scan-to-add' session initiated from the /addmedicine webpage.
+
+    Lifecycle:  pending → completed | failed
+    The desktop UI polls GET /api/sync/check/<token> and gets the full
+    medicine record back once status = 'completed'.
+    """
+    __tablename__ = "mobile_sync_sessions"
+
+    id            = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    token         = Column(String(200), unique=True, nullable=False, index=True)
+    admin_id      = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    status        = Column(String(20), default="pending", nullable=False)
+                        # pending | completed | failed
+    medicine_id   = Column(UUID(as_uuid=True), ForeignKey("medicines.id"), nullable=True)
+    error_message = Column(Text, nullable=True)
+    created_at    = Column(DateTime(timezone=True), default=utcnow)
+    updated_at    = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
 class Supplier(Base):

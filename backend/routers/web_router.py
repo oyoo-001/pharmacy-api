@@ -655,3 +655,228 @@ async def online_sessions(
         }
         for s in items
     ]
+
+# ── /addmedicine — mobile scan page ──────────────────────────────────────────
+
+_ADD_MEDICINE_HTML = r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Add Medicine — Kevin Odongo Pharmacy</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#f1f5f9;min-height:100vh;
+     display:flex;align-items:center;justify-content:center;padding:16px;}
+.card{background:#fff;border-radius:20px;padding:32px 28px;width:100%;max-width:440px;
+      box-shadow:0 8px 32px rgba(0,0,0,.1);}
+.brand{display:flex;align-items:center;gap:10px;margin-bottom:24px;}
+.brand .dot{width:36px;height:36px;background:linear-gradient(135deg,#6366f1,#818cf8);
+            border-radius:10px;display:flex;align-items:center;justify-content:center;
+            font-size:18px;}
+.brand h1{font-size:18px;font-weight:800;color:#0f172a;}
+.brand p{font-size:12px;color:#64748b;}
+label{display:block;font-size:12px;font-weight:700;color:#475569;margin-bottom:6px;
+      text-transform:uppercase;letter-spacing:.4px;}
+input,textarea,select{width:100%;padding:12px 14px;border:1.5px solid #e2e8f0;
+      border-radius:10px;font-size:14px;color:#1e293b;background:#f8fafc;outline:none;
+      transition:border-color .2s;}
+input:focus,textarea:focus,select:focus{border-color:#6366f1;background:#fff;}
+.field{margin-bottom:18px;}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.submit-btn{width:100%;padding:14px;border:none;border-radius:12px;
+            background:linear-gradient(135deg,#6366f1,#818cf8);
+            color:#fff;font-size:15px;font-weight:700;cursor:pointer;
+            transition:opacity .2s;margin-top:8px;}
+.submit-btn:hover{opacity:.9}
+.submit-btn:disabled{opacity:.5;cursor:not-allowed}
+.status{margin-top:16px;padding:14px;border-radius:10px;font-size:14px;
+        font-weight:600;text-align:center;display:none;}
+.status.success{background:#dcfce7;color:#166534;}
+.status.error{background:#fee2e2;color:#991b1b;}
+.status.info{background:#eef2ff;color:#3730a3;}
+.spinner{display:inline-block;width:16px;height:16px;border:2px solid #fff;
+         border-top-color:transparent;border-radius:50%;
+         animation:spin .6s linear infinite;vertical-align:middle;margin-right:6px;}
+@keyframes spin{to{transform:rotate(360deg)}}
+.hint{font-size:11px;color:#94a3b8;margin-top:4px;}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="brand">
+    <div class="dot">💊</div>
+    <div>
+      <h1>Add Medicine</h1>
+      <p>Scan or type the drug name to auto-fill</p>
+    </div>
+  </div>
+
+  <form id="addForm">
+    <div class="field">
+      <label>Drug Name *</label>
+      <input type="text" id="drugName" name="name" required
+             placeholder="e.g. Amoxicillin 500mg" autocomplete="off">
+      <div class="hint">Type the brand or generic name — we'll look it up on openFDA.</div>
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label>Batch Number</label>
+        <input type="text" id="batchNumber" name="batch_number"
+               placeholder="BT-20250101">
+      </div>
+      <div class="field">
+        <label>Expiry Date</label>
+        <input type="date" id="expiryDate" name="expiry_date">
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label>Buying Price (KES)</label>
+        <input type="number" id="buyingPrice" name="buying_price"
+               min="0" step="0.01" placeholder="0.00" value="0">
+      </div>
+      <div class="field">
+        <label>Selling Price (KES) *</label>
+        <input type="number" id="sellingPrice" name="selling_price"
+               min="0" step="0.01" placeholder="0.00" value="0" required>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label>Quantity</label>
+        <input type="number" id="quantity" name="quantity"
+               min="0" placeholder="0" value="0">
+      </div>
+      <div class="field">
+        <label>Reorder Level</label>
+        <input type="number" id="reorderLevel" name="reorder_level"
+               min="0" placeholder="10" value="10">
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Description / Notes</label>
+      <textarea id="description" name="description" rows="2"
+                placeholder="Optional notes…"></textarea>
+    </div>
+
+    <button type="submit" class="submit-btn" id="submitBtn">
+      💊 Add Medicine
+    </button>
+  </form>
+
+  <div class="status" id="statusBox"></div>
+</div>
+
+<script>
+// ── Read token from URL: /addmedicine?token=<JWT> ─────────────────────────
+const params   = new URLSearchParams(location.search);
+const jwtToken = params.get('token') || '';
+let sessionToken = '';
+let pharmacyId   = '';
+
+async function initSession() {
+  if (!jwtToken) {
+    showStatus('error', 'No authentication token. Open this page from the desktop app.');
+    return;
+  }
+  try {
+    const r = await fetch('/api/sync/session', {
+      headers: { 'Authorization': 'Bearer ' + jwtToken }
+    });
+    if (!r.ok) throw new Error('Session init failed: ' + r.status);
+    const d = await r.json();
+    sessionToken = d.token;
+    pharmacyId   = d.admin_id;
+  } catch(e) {
+    showStatus('error', 'Could not start session: ' + e.message);
+  }
+}
+
+document.getElementById('addForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+
+  if (!sessionToken) {
+    showStatus('error', 'Session not ready. Refresh and try again.');
+    return;
+  }
+
+  const btn      = document.getElementById('submitBtn');
+  const drugName = document.getElementById('drugName').value.trim();
+
+  if (!drugName) {
+    showStatus('error', 'Please enter the drug name.');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Looking up drug info…';
+  showStatus('info', '🔍 Searching openFDA database…');
+
+  const payload = {
+    session_token:  sessionToken,
+    pharmacy_id:    pharmacyId,
+    extracted_text: drugName,
+  };
+
+  try {
+    const r = await fetch('/api/medicine/submit-scan', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json',
+                 'Authorization': 'Bearer ' + jwtToken },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await r.json();
+
+    if (!r.ok) {
+      throw new Error(data.detail || 'Submission failed');
+    }
+
+    // Now update the form fields with the data we need to fill manually
+    // (openFDA fills name/category/description; the rest stays as user entered)
+    showStatus('success',
+      '✅ ' + data.message + '\n\nPlease update the pricing and stock details in the desktop app.');
+
+    btn.innerHTML = '✅ Medicine Added!';
+    btn.disabled  = false;
+
+    // Optionally reset form after 5 s
+    setTimeout(() => {
+      document.getElementById('addForm').reset();
+      btn.innerHTML = '💊 Add Medicine';
+      document.getElementById('statusBox').style.display = 'none';
+    }, 6000);
+
+  } catch(err) {
+    showStatus('error', '❌ ' + err.message);
+    btn.innerHTML = '💊 Add Medicine';
+    btn.disabled  = false;
+  }
+});
+
+function showStatus(type, msg) {
+  const box = document.getElementById('statusBox');
+  box.className = 'status ' + type;
+  box.textContent = msg;
+  box.style.display = 'block';
+}
+
+// Initialise session on page load
+initSession();
+</script>
+</body>
+</html>"""
+
+
+@router.get("/addmedicine", response_class=HTMLResponse)
+async def add_medicine_page():
+    """
+    Mobile-friendly scan-to-add page.
+    Opens with ?token=<JWT> appended by the desktop app.
+    """
+    return _ADD_MEDICINE_HTML
