@@ -81,25 +81,35 @@ def _auth_headers() -> dict:
 
 def _normalize_phone(raw: str) -> str:
     """
-    Convert any Kenyan phone format to 2547XXXXXXXX (12 digits, no +).
-    Accepts: 07..., +2547..., 2547..., 7...
+    Normalize to E.164 format WITH the leading + that Paystack requires:
+    +254XXXXXXXXX (13 chars total)
+
+    Accepts: 07XXXXXXXX / +2547XXXXXXXX / 2547XXXXXXXX / 7XXXXXXXX
     """
     phone = raw.strip().replace(" ", "").replace("-", "")
+
+    # Strip leading + so we can work with digits only
     if phone.startswith("+"):
         phone = phone[1:]
-    if phone.startswith("0"):
-        phone = "254" + phone[1:]
-    elif phone.startswith("7") or phone.startswith("1"):
-        phone = "254" + phone
+
+    # Convert local Kenyan formats → 254XXXXXXXXX
+    if phone.startswith("0") and len(phone) == 10:
+        phone = "254" + phone[1:]          # 07XXXXXXXX → 2547XXXXXXXX
+    elif (phone.startswith("7") or phone.startswith("1")) and len(phone) == 9:
+        phone = "254" + phone              # 7XXXXXXXX  → 2547XXXXXXXX
+
+    # Validate: must be 12 digits starting with 254
     if not phone.startswith("254") or len(phone) != 12 or not phone.isdigit():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
                 f"Invalid phone number: '{raw}'. "
-                "Use format 07XXXXXXXX, +2547XXXXXXXX, or 2547XXXXXXXX."
+                "Use format 07XXXXXXXX, +254XXXXXXXXX, or 254XXXXXXXXX."
             ),
         )
-    return phone
+
+    # Paystack mobile_money.phone requires E.164 WITH the + prefix
+    return "+" + phone
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -118,7 +128,7 @@ async def initiate_charge(
     3. Saves a pending MpesaTransaction row.
     4. Returns the reference the client uses to poll /verify/{ref}.
     """
-    phone           = _normalize_phone(req.phone_number)
+    phone           = _normalize_phone(req.phone_number)   # returns +254XXXXXXXXX
     admin_id        = get_tenant_id(user)
     amount_subunits = int(round(req.amount * 100))
     reference       = f"PHARM-{uuid.uuid4().hex[:12].upper()}"
@@ -129,7 +139,7 @@ async def initiate_charge(
         "currency":     "KES",
         "reference":    reference,
         "mobile_money": {
-            "phone":    phone,
+            "phone":    phone,          # E.164 with + e.g. +254742041208
             "provider": "mpesa",
         },
     }
