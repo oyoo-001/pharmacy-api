@@ -49,7 +49,7 @@ async def stock_summary(
     )
     medicines = result.scalars().all()
     total_units = sum(m.quantity for m in medicines)
-    total_stock_value = sum(m.quantity * (m.buying_price or 0) for m in medicines)
+    total_stock_value = sum(m.quantity * (m.selling_price or 0) for m in medicines)
     low_stock = sum(1 for m in medicines if 0 < m.quantity <= m.reorder_level)
     out_of_stock = sum(1 for m in medicines if m.quantity <= 0)
     return StockSummary(
