@@ -33,6 +33,7 @@ class StockSummary(BaseModel):
     total_units: int
     low_stock: int
     out_of_stock: int
+    total_stock_value: float = 0.0
 
 
 @router.get("/summary", response_model=StockSummary)
@@ -48,6 +49,7 @@ async def stock_summary(
     )
     medicines = result.scalars().all()
     total_units = sum(m.quantity for m in medicines)
+    total_stock_value = sum(m.quantity * (m.buying_price or 0) for m in medicines)
     low_stock = sum(1 for m in medicines if 0 < m.quantity <= m.reorder_level)
     out_of_stock = sum(1 for m in medicines if m.quantity <= 0)
     return StockSummary(
@@ -55,6 +57,7 @@ async def stock_summary(
         total_units=total_units,
         low_stock=low_stock,
         out_of_stock=out_of_stock,
+        total_stock_value=round(total_stock_value, 2),
     )
 
 
