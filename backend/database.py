@@ -131,6 +131,20 @@ async def _run_column_migrations():
         "ALTER TABLE pharmacy_settings ADD COLUMN IF NOT EXISTS receipt_width VARCHAR(20) DEFAULT '80mm'",
         "ALTER TABLE pharmacy_settings ADD COLUMN IF NOT EXISTS receipt_show_tax BOOLEAN DEFAULT TRUE",
         "ALTER TABLE pharmacy_settings ADD COLUMN IF NOT EXISTS receipt_show_qr BOOLEAN DEFAULT FALSE",
+        # ── Notification settings + table ──────────────────────────────────
+        "ALTER TABLE pharmacy_settings ADD COLUMN IF NOT EXISTS notifications_enabled BOOLEAN DEFAULT TRUE",
+        """CREATE TABLE IF NOT EXISTS notifications (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            admin_id UUID NOT NULL REFERENCES users(id),
+            title VARCHAR(200) NOT NULL,
+            message TEXT NOT NULL,
+            type VARCHAR(50) DEFAULT 'info',
+            is_read BOOLEAN DEFAULT FALSE,
+            link VARCHAR(500),
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_notifications_admin_read ON notifications(admin_id, is_read)",
+        "CREATE INDEX IF NOT EXISTS idx_notifications_admin_created ON notifications(admin_id, created_at)",
     ]
 
     # Execute each statement in its own transaction so one failure cannot

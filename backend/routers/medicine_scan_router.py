@@ -61,6 +61,7 @@ class ScanPayload(BaseModel):
 class ImageAnalysisPayload(BaseModel):
     image_base64: str         # base64-encoded image (no data: prefix)
     mime_type: str = "image/jpeg"
+    image_number: int = 1     # which image (1-3) in a multi-image scan
 
 
 class ScanResponse(BaseModel):
@@ -165,8 +166,12 @@ _ANALYSIS_PROMPT = """\
 You are a pharmaceutical data extractor. Analyze this image of a medicine
 package, label, or blister pack and extract as much information as possible.
 
+This may be one of up to 3 images of the SAME medicine taken from different
+angles (e.g. front name, side batch number, back expiry date). Extract
+whatever is visible in THIS particular image — even partial info is valuable.
+
 Return ONLY a valid JSON object with these fields (use empty string / 0 for
-anything you cannot determine):
+anything you cannot determine from THIS image):
 
 {
   "name":         "string — medicine brand or generic name",
@@ -387,7 +392,16 @@ async def submit_scan(
     db.add(medicine)
     await db.flush()   # get medicine.id without full commit yet
 
-    # ── 4. Mark session completed ─────────────────────────────────────────────
+    # ── 4. Create notification ──────────────────────────────────────────────
+    from backend.routers.notifications_router import create_notification
+    await create_notification(
+        db, claimed_admin,
+        title="New Medicine Added",
+        message=f"'{name}' was added via mobile scan.",
+        ntype="medicine",
+    )
+
+    # ── 5. Mark session completed ─────────────────────────────────────────────
     sync_session.status      = "completed"
     sync_session.medicine_id = medicine.id
     sync_session.updated_at  = datetime.now(timezone.utc)

@@ -20,6 +20,7 @@ from backend.routers import updates_router
 from backend.routers import mpesa_router
 from backend.routers import payment_settings_router
 from backend.routers import medicine_scan_router
+from backend.routers import notifications_router
 
 
 @asynccontextmanager
@@ -90,6 +91,7 @@ app.include_router(updates_router.router)
 app.include_router(mpesa_router.router)
 app.include_router(payment_settings_router.router)
 app.include_router(medicine_scan_router.router)
+app.include_router(notifications_router.router)
 app.include_router(web_router.router)
 app.include_router(messaging_router.router)
 app.include_router(update_router.router)

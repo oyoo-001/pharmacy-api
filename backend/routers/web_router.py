@@ -724,6 +724,24 @@ input:focus,textarea:focus,select:focus{border-color:#6366f1;background:#fff;}
 #previewImg{max-width:100%;max-height:120px;border-radius:8px;margin-top:10px;
             display:none;box-shadow:0 2px 8px rgba(0,0,0,.1);}
 .ai-status{margin-top:10px;font-size:12px;color:#6366f1;font-weight:600;display:none;}
+/* ── Multi-image thumbnails ──────────────────────────────── */
+.thumb-grid{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:10px;}
+.thumb-wrap{position:relative;width:72px;height:72px;border-radius:10px;overflow:hidden;
+            box-shadow:0 2px 8px rgba(0,0,0,.12);border:2px solid #c7d2fe;}
+.thumb-wrap img{width:100%;height:100%;object-fit:cover;}
+.thumb-wrap .thumb-num{position:absolute;top:2px;left:2px;background:#6366f1;
+                       color:#fff;font-size:9px;font-weight:700;width:18px;height:18px;
+                       border-radius:50%;display:flex;align-items:center;justify-content:center;}
+.thumb-wrap .thumb-del{position:absolute;top:2px;right:2px;background:#ef4444;
+                       color:#fff;font-size:10px;width:18px;height:18px;border-radius:50%;
+                       display:flex;align-items:center;justify-content:center;cursor:pointer;
+                       border:none;line-height:1;}
+.thumb-wrap .thumb-del:hover{background:#dc2626;}
+.img-counter{font-size:11px;color:#6366f1;font-weight:700;margin-top:8px;}
+.clear-all-btn{display:inline-block;margin-top:8px;padding:6px 14px;border:1px solid #c7d2fe;
+               background:#fff;color:#6366f1;border-radius:8px;font-size:11px;font-weight:700;
+               cursor:pointer;transition:all .2s;}
+.clear-all-btn:hover{background:#eef2ff;border-color:#6366f1;}
 /* ── AI error card ──────────────────────────────────────────── */
 .ai-error{display:none;margin-top:14px;background:#fef2f2;border:1px solid #fecaca;
           border-radius:12px;padding:16px;text-align:center;}
@@ -778,6 +796,9 @@ input:focus,textarea:focus,select:focus{border-color:#6366f1;background:#fff;}
     </div>
     <input type="file" id="fileInput" accept="image/*" style="display:none">
     <img id="previewImg" alt="Preview">
+    <div class="thumb-grid" id="thumbGrid"></div>
+    <div class="img-counter" id="imgCounter"></div>
+    <button type="button" class="clear-all-btn" id="clearAllBtn" style="display:none" onclick="clearAllImages()">✕ Clear All Images</button>
     <div class="ai-status" id="aiStatus">🤖 Analyzing with AI...</div>
   </div>
 
@@ -892,74 +913,143 @@ async function initSession() {
   }
 }
 
-// ── AI image analysis ────────────────────────────────────────────────────
+// ── AI image analysis (multi-image: up to 3) ─────────────────────────────
+const MAX_IMAGES = 3;
 const fileInput  = document.getElementById('fileInput');
 const previewImg = document.getElementById('previewImg');
 const aiStatus   = document.getElementById('aiStatus');
 const aiError    = document.getElementById('aiError');
 const aiErrorMsg = document.getElementById('aiErrorMsg');
-let lastAnalyzedFile = null;
+const thumbGrid  = document.getElementById('thumbGrid');
+const imgCounter = document.getElementById('imgCounter');
+const clearAllBtn= document.getElementById('clearAllBtn');
 const uploadBtn  = document.getElementById('uploadBtn');
 const cameraBtn  = document.getElementById('cameraBtn');
+let uploadedFiles = [];   // {file, dataUrl, result}
+let mergedData = {};      // merged results from all images
 
 fileInput.addEventListener('change', function(e) {
   const file = e.target.files[0];
   if (!file) return;
-  showPreview(file);
+  if (uploadedFiles.length >= MAX_IMAGES) return;
   analyzeImage(file);
 });
 
-function showPreview(file) {
-  const reader = new FileReader();
-  reader.onload = function(ev) {
-    previewImg.src = ev.target.result;
-    previewImg.style.display = 'block';
-  };
-  reader.readAsDataURL(file);
+function updateUI() {
+  const n = uploadedFiles.length;
+  imgCounter.textContent = n > 0 ? n + '/' + MAX_IMAGES + ' images scanned' : '';
+  clearAllBtn.style.display = n > 1 ? 'inline-block' : 'none';
+  if (n >= MAX_IMAGES) {
+    uploadBtn.disabled = true;
+    cameraBtn.disabled = true;
+  } else {
+    uploadBtn.disabled = false;
+    cameraBtn.disabled = false;
+  }
+}
+
+function renderThumbnails() {
+  thumbGrid.innerHTML = '';
+  uploadedFiles.forEach(function(item, i) {
+    const wrap = document.createElement('div');
+    wrap.className = 'thumb-wrap';
+    wrap.innerHTML = '<img src="' + item.dataUrl + '">' +
+      '<span class="thumb-num">' + (i+1) + '</span>' +
+      '<button class="thumb-del" onclick="removeImage(' + i + ')" title="Remove">&times;</button>';
+    thumbGrid.appendChild(wrap);
+  });
+}
+
+function removeImage(idx) {
+  uploadedFiles.splice(idx, 1);
+  // Rebuild merged data from remaining results
+  mergedData = {};
+  uploadedFiles.forEach(function(item) {
+    mergeData(item.result);
+  });
+  applyMergedToForm();
+  renderThumbnails();
+  updateUI();
+}
+
+function clearAllImages() {
+  uploadedFiles = [];
+  mergedData = {};
+  thumbGrid.innerHTML = '';
+  previewImg.style.display = 'none';
+  aiStatus.style.display = 'none';
+  aiError.style.display = 'none';
+  updateUI();
+}
+
+function mergeData(newResult) {
+  // Prefer non-empty / non-zero values from new result into merged
+  var fields = ['name','category','description','batch_number','expiry_date',
+                'buying_price','selling_price','quantity','reorder_level'];
+  fields.forEach(function(f) {
+    var val = newResult[f];
+    if (val !== undefined && val !== null && val !== '' && val !== 0) {
+      mergedData[f] = val;
+    }
+  });
+}
+
+function applyMergedToForm() {
+  if (mergedData.name)        document.getElementById('drugName').value       = mergedData.name;
+  if (mergedData.category)    document.getElementById('category').value       = mergedData.category;
+  if (mergedData.description) document.getElementById('description').value    = mergedData.description;
+  if (mergedData.batch_number) document.getElementById('batchNumber').value  = mergedData.batch_number;
+  if (mergedData.expiry_date)  document.getElementById('expiryDate').value   = mergedData.expiry_date;
+  if (mergedData.buying_price)  document.getElementById('buyingPrice').value  = mergedData.buying_price;
+  if (mergedData.selling_price) document.getElementById('sellingPrice').value = mergedData.selling_price;
+  if (mergedData.quantity)      document.getElementById('quantity').value     = mergedData.quantity;
+  if (mergedData.reorder_level) document.getElementById('reorderLevel').value = mergedData.reorder_level;
 }
 
 async function analyzeImage(file) {
-  const btn = uploadBtn;
+  if (uploadedFiles.length >= MAX_IMAGES) return;
+  var btn = uploadBtn;
   btn.classList.add('loading');
   btn.disabled = true;
   cameraBtn.disabled = true;
   aiStatus.style.display = 'block';
-  aiStatus.textContent = '🤖 Analyzing with AI...';
+  aiStatus.textContent = '🤖 Analyzing image ' + (uploadedFiles.length + 1) + '...';
   aiStatus.style.color = '#6366f1';
   aiError.style.display = 'none';
-  lastAnalyzedFile = file;
 
   try {
-    const base64 = await fileToBase64(file);
-    const mime   = file.type || 'image/jpeg';
+    var base64 = await fileToBase64(file);
+    var mime   = file.type || 'image/jpeg';
 
-    const r = await fetch('/api/medicine/analyze-image', {
+    var r = await fetch('/api/medicine/analyze-image', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer ' + jwtToken,
       },
-      body: JSON.stringify({ image_base64: base64, mime_type: mime }),
+      body: JSON.stringify({ image_base64: base64, mime_type: mime, image_number: uploadedFiles.length + 1 }),
     });
 
-    const data = await r.json();
+    var data = await r.json();
 
     if (!r.ok || data.error) {
       throw new Error(data.error || 'Analysis failed');
     }
 
-    // Auto-fill form fields from Gemini response
-    if (data.name)        document.getElementById('drugName').value       = data.name;
-    if (data.category)    document.getElementById('category').value       = data.category;
-    if (data.description) document.getElementById('description').value    = data.description;
-    if (data.batch_number) document.getElementById('batchNumber').value  = data.batch_number;
-    if (data.expiry_date)  document.getElementById('expiryDate').value   = data.expiry_date;
-    if (data.buying_price)  document.getElementById('buyingPrice').value  = data.buying_price;
-    if (data.selling_price) document.getElementById('sellingPrice').value = data.selling_price;
-    if (data.quantity)      document.getElementById('quantity').value     = data.quantity;
-    if (data.reorder_level) document.getElementById('reorderLevel').value = data.reorder_level;
+    // Store the file and result
+    var reader = new FileReader();
+    var dataUrl = await new Promise(function(res) {
+      reader.onload = function(ev) { res(ev.target.result); };
+      reader.readAsDataURL(file);
+    });
 
-    aiStatus.textContent = '✅ AI analysis complete — fields auto-filled!';
+    uploadedFiles.push({ file: file, dataUrl: dataUrl, result: data });
+    mergeData(data);
+    applyMergedToForm();
+    renderThumbnails();
+    updateUI();
+
+    aiStatus.textContent = '✅ Image ' + uploadedFiles.length + ' analyzed — ' + uploadedFiles.length + '/' + MAX_IMAGES + ' done';
     aiStatus.style.color = '#16a34a';
   } catch(err) {
     aiStatus.style.display = 'none';
@@ -969,15 +1059,21 @@ async function analyzeImage(file) {
     btn.classList.remove('loading');
     btn.disabled = false;
     cameraBtn.disabled = false;
+    if (uploadedFiles.length >= MAX_IMAGES) {
+      uploadBtn.disabled = true;
+      cameraBtn.disabled = true;
+    }
   }
 }
 
 function retryAnalysis() {
-  if (!lastAnalyzedFile) {
+  if (uploadedFiles.length === 0) {
     aiErrorMsg.textContent = 'No image to retry. Please upload or take a photo again.';
     return;
   }
-  analyzeImage(lastAnalyzedFile);
+  // Retry with the last failed file — remove it first if it exists in the list
+  var lastFile = uploadedFiles.length > 0 ? uploadedFiles[uploadedFiles.length - 1].file : null;
+  if (lastFile) analyzeImage(lastFile);
 }
 
 function fileToBase64(file) {
@@ -985,7 +1081,6 @@ function fileToBase64(file) {
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result;
-      // Strip "data:image/...;base64," prefix
       const base64 = result.split(',')[1] || result;
       resolve(base64);
     };
@@ -1030,8 +1125,6 @@ async function capturePhoto() {
   canvas.toBlob(async function(blob) {
     closeCamera();
     if (!blob) return;
-    showPreview(blob);
-    // Rename the blob so it has a mime type
     const file = new File([blob], 'camera_capture.jpg', { type: 'image/jpeg' });
     await analyzeImage(file);
   }, 'image/jpeg', 0.92);
@@ -1096,8 +1189,7 @@ document.getElementById('addForm').addEventListener('submit', async function(e) 
       document.getElementById('addForm').reset();
       btn.innerHTML = '💊 Add Medicine';
       document.getElementById('statusBox').style.display = 'none';
-      previewImg.style.display = 'none';
-      aiStatus.style.display = 'none';
+      clearAllImages();
     }, 6000);
 
   } catch(err) {

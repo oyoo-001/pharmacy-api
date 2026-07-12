@@ -105,6 +105,8 @@ class PharmacySetting(Base):
     receipt_width = Column(String(20), default="80mm")  # 58mm | 80mm | A4
     receipt_show_tax = Column(default=True)              # show/hide tax line
     receipt_show_qr = Column(default=False)              # show/hide QR code
+    # ── Notification settings ──────────────────────────────────────────
+    notifications_enabled = Column(Boolean, default=True)  # master toggle
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     admin = relationship("User", back_populates="settings")
@@ -430,3 +432,22 @@ class AppUpdate(Base):
     min_app_version = Column(String(20), default="1.0.0")
     is_active = Column(Boolean, default=True)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+
+
+class Notification(Base):
+    """In-app notifications for the desktop sidebar bell."""
+    __tablename__ = "notifications"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    admin_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    title = Column(String(200), nullable=False)
+    message = Column(Text, nullable=False)
+    type = Column(String(50), default="info")  # info | medicine | low_stock | message | alert
+    is_read = Column(Boolean, default=False)
+    link = Column(String(500))               # optional deep-link (e.g. /medicines)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        Index("idx_notifications_admin_read", "admin_id", "is_read"),
+        Index("idx_notifications_admin_created", "admin_id", "created_at"),
+    )

@@ -31,6 +31,8 @@ class SettingsUpdate(BaseModel):
     receipt_width: Optional[str] = None
     receipt_show_tax: Optional[bool] = None
     receipt_show_qr: Optional[bool] = None
+    # ── Notification settings ──────────────────────────────────────────
+    notifications_enabled: Optional[bool] = None
 
 
 class SettingsResponse(BaseModel):
@@ -51,6 +53,8 @@ class SettingsResponse(BaseModel):
     receipt_width: Optional[str] = None
     receipt_show_tax: Optional[bool] = True
     receipt_show_qr: Optional[bool] = False
+    # ── Notification settings ──────────────────────────────────────────
+    notifications_enabled: Optional[bool] = True
 
     class Config:
         from_attributes = True

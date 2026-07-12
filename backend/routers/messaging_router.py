@@ -244,6 +244,18 @@ async def send_message(
     )
     db.add(msg)
     conv.updated_at = datetime.now(timezone.utc)
+
+    # Notify the admin if a worker sent the message
+    if user.id != conv.admin_id:
+        from backend.routers.notifications_router import create_notification
+        sender_name = user.full_name or user.username or "Worker"
+        await create_notification(
+            db, conv.admin_id,
+            title="New Message",
+            message=f"{sender_name}: {data.content[:80]}",
+            ntype="message",
+        )
+
     await db.commit()
     await db.refresh(msg)
     return msg

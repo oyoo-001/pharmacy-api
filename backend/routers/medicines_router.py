@@ -164,6 +164,16 @@ async def create_medicine(
 
     medicine = Medicine(admin_id=tenant_id, **data.model_dump())
     db.add(medicine)
+    await db.flush()
+
+    from backend.routers.notifications_router import create_notification
+    await create_notification(
+        db, tenant_id,
+        title="New Medicine Added",
+        message=f"'{data.name}' was added to inventory.",
+        ntype="medicine",
+    )
+
     await db.commit()
     await db.refresh(medicine)
     return medicine
@@ -200,6 +210,24 @@ async def update_medicine(
 
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(medicine, field, value)
+
+    # Low stock alert
+    if medicine.quantity <= medicine.reorder_level and medicine.quantity > 0:
+        from backend.routers.notifications_router import create_notification
+        await create_notification(
+            db, tenant_id,
+            title="Low Stock Alert",
+            message=f"'{medicine.name}' has only {medicine.quantity} units left (reorder at {medicine.reorder_level}).",
+            ntype="low_stock",
+        )
+    elif medicine.quantity <= 0:
+        from backend.routers.notifications_router import create_notification
+        await create_notification(
+            db, tenant_id,
+            title="Out of Stock",
+            message=f"'{medicine.name}' is now out of stock.",
+            ntype="low_stock",
+        )
 
     await db.commit()
     await db.refresh(medicine)
