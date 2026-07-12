@@ -62,6 +62,20 @@ class MedicineResponse(BaseModel):
 
 # ---------- Endpoints ----------
 
+@router.get("/count")
+async def medicine_count(
+    user: User = Depends(require_profile_complete),
+    db: AsyncSession = Depends(get_db),
+):
+    tenant_id = get_tenant_id(user)
+    result = await db.execute(
+        select(func.count()).select_from(Medicine).where(
+            Medicine.admin_id == tenant_id, Medicine.is_active == True
+        )
+    )
+    return {"count": result.scalar() or 0}
+
+
 @router.get("", response_model=list[MedicineResponse])
 async def list_medicines(
     search: Optional[str] = Query(None),

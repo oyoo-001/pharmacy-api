@@ -50,26 +50,25 @@ app.add_middleware(
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     path = request.url.path
-    if path.startswith(("/health", "/api/admin", "/feedback")):
+    if path.startswith("/api/") or path in ("/health", "/"):
         try:
             async with async_session() as db:
                 from sqlalchemy import select
                 ip = request.client.host if request.client else "unknown"
-                if path in ("/health", "/"):
-                    result = await db.execute(
-                        select(OnlineSession).where(OnlineSession.ip_address == ip)
+                result = await db.execute(
+                    select(OnlineSession).where(OnlineSession.ip_address == ip)
+                )
+                session = result.scalar_one_or_none()
+                if session:
+                    session.last_ping = datetime.now(timezone.utc)
+                else:
+                    session = OnlineSession(
+                        ip_address=ip,
+                        user_agent=request.headers.get("user-agent", ""),
+                        path=path,
                     )
-                    session = result.scalar_one_or_none()
-                    if session:
-                        session.last_ping = datetime.now(timezone.utc)
-                    else:
-                        session = OnlineSession(
-                            ip_address=ip,
-                            user_agent=request.headers.get("user-agent", ""),
-                            path=path,
-                        )
-                        db.add(session)
-                    await db.commit()
+                    db.add(session)
+                await db.commit()
         except Exception as e:
             log.warning("Tracking error: %s", e)
     response = await call_next(request)
