@@ -193,14 +193,13 @@ anything you cannot determine from THIS image):
   "description":  "string — short description of what the medicine is for",
   "batch_number": "string — batch/lot number if visible",
   "expiry_date":  "string — expiry date in YYYY-MM-DD format if visible",
-  "buying_price": 0,
-  "selling_price": 0,
+  "buying_price": "string - possible buying price in kenya",
+  "selling_price":"string - possible selling price in kekya with aim of making profit",
   "quantity":     10,
   "reorder_level": 10
 }
 
-buying_price and selling_price must be NUMBERS (not strings). If prices are
-printed on the package, extract them. If not visible, use 0.
+
 Do NOT include any markdown, backticks, or explanation — just the raw JSON.
 """
 
