@@ -713,6 +713,8 @@ input:focus,textarea:focus,select:focus{border-color:#6366f1;background:#fff;}
 .ai-btn.upload:hover{background:#4f46e5;}
 .ai-btn.camera{background:#fff;color:#6366f1;border-color:#c7d2fe;}
 .ai-btn.camera:hover{background:#eef2ff;border-color:#6366f1;}
+/* Hide camera button on desktop — only show on phones */
+@media(min-width:640px){.ai-btn.camera{display:none !important;}}
 .ai-btn:disabled{opacity:.4;cursor:not-allowed;}
 .ai-btn .loader{display:none;width:14px;height:14px;border:2px solid #fff;
                 border-top-color:transparent;border-radius:50%;
@@ -723,21 +725,34 @@ input:focus,textarea:focus,select:focus{border-color:#6366f1;background:#fff;}
             display:none;box-shadow:0 2px 8px rgba(0,0,0,.1);}
 .ai-status{margin-top:10px;font-size:12px;color:#6366f1;font-weight:600;display:none;}
 
-/* ── Camera modal ─────────────────────────────────────────────── */
-.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;
-               align-items:center;justify-content:center;z-index:999;}
+/* ── Camera modal (mobile-only, fullscreen) ──────────────────── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.92);display:none;
+               align-items:center;justify-content:center;z-index:999;
+               flex-direction:column;}
 .modal-overlay.show{display:flex;}
-.modal-box{background:#fff;border-radius:16px;padding:24px;width:90%;max-width:380px;
-           text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.25);}
-.modal-box h3{font-size:16px;color:#0f172a;margin-bottom:12px;}
-.modal-box video{width:100%;border-radius:10px;background:#000;margin-bottom:14px;}
-.modal-btns{display:flex;gap:10px;justify-content:center;}
-.modal-btns button{padding:10px 20px;border-radius:10px;font-size:13px;font-weight:700;
+.modal-box{background:#0f172a;border-radius:0;padding:0;width:100%;height:100%;
+           max-width:100%;display:flex;flex-direction:column;
+           text-align:center;overflow:hidden;position:relative;}
+.modal-box h3{font-size:15px;color:#fff;margin:0;padding:14px 16px 10px;
+              background:#0f172a;letter-spacing:1px;font-weight:800;}
+.modal-box video{flex:1;width:100%;object-fit:cover;border-radius:0;background:#000;}
+.modal-btns{display:flex;gap:0;justify-content:stretch;padding:0;}
+.modal-btns button{flex:1;padding:16px 0;border-radius:0;font-size:15px;font-weight:700;
                    border:none;cursor:pointer;}
 .modal-btns .capture{background:#6366f1;color:#fff;}
 .modal-btns .capture:hover{background:#4f46e5;}
-.modal-btns .cancel{background:#f1f5f9;color:#475569;}
-.modal-btns .cancel:hover{background:#e2e8f0;}
+.modal-btns .cancel{background:#1e293b;color:#94a3b8;}
+.modal-btns .cancel:hover{background:#334155;}
+/* On desktop, keep a small centered modal as fallback if somehow triggered */
+@media(min-width:640px){
+  .modal-overlay{align-items:center;justify-content:center;background:rgba(0,0,0,.55);}
+  .modal-box{border-radius:16px;padding:20px;width:90%;max-width:380px;height:auto;
+             max-height:80vh;}
+  .modal-box h3{border-radius:16px 16px 0 0;}
+  .modal-box video{border-radius:10px;max-height:50vh;}
+  .modal-btns{border-radius:0 0 16px 16px;}
+  .modal-btns button{border-radius:0;}
+}
 </style>
 </head>
 <body>
