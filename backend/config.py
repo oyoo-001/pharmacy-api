@@ -40,3 +40,4 @@ DATABASE_URL_SYNC = os.getenv("DATABASE_URL_SYNC") or build_db_url("psycopg2")
 
 PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")

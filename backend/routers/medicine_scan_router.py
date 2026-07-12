@@ -30,7 +30,7 @@ from sqlalchemy import select
 from backend.database import get_db
 from backend.models import Medicine, MobileSyncSession, User
 from backend.auth import require_profile_complete, get_tenant_id, get_current_user
-from backend.config import log, GEMINI_API_KEY
+from backend.config import log, GEMINI_API_KEY, GEMINI_MODEL
 
 router = APIRouter(tags=["Mobile Scan"])
 
@@ -149,7 +149,7 @@ def _first(lst) -> Optional[str]:
 
 _GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta/"
-    "models/gemini-2.5-flash:generateContent"
+    f"models/{GEMINI_MODEL}:generateContent"
 )
 
 _ANALYSIS_PROMPT = """\
