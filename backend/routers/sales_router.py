@@ -118,6 +118,29 @@ async def get_sale(
     return sale
 
 
+@router.patch("/{sale_id}/mark-paid", response_model=SaleResponse)
+async def mark_sale_paid(
+    sale_id: uuid.UUID,
+    user: User = Depends(require_profile_complete),
+    db: AsyncSession = Depends(get_db),
+):
+    """Change a credit sale's payment_method to 'cash' (marks debt as settled)."""
+    tenant_id = get_tenant_id(user)
+    result = await db.execute(
+        select(Sale).options(selectinload(Sale.items))
+        .where(and_(Sale.id == sale_id, Sale.admin_id == tenant_id))
+    )
+    sale = result.scalar_one_or_none()
+    if not sale:
+        raise HTTPException(status_code=404, detail="Sale not found")
+    if sale.payment_method != "credit":
+        raise HTTPException(status_code=400, detail="Sale is not a credit sale")
+    sale.payment_method = "cash"
+    await db.commit()
+    await db.refresh(sale)
+    return sale
+
+
 @router.post("", response_model=SaleResponse, status_code=201)
 async def create_sale(
     data: SaleCreate,
