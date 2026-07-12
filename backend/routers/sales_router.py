@@ -77,6 +77,7 @@ def _generate_invoice(admin_id: uuid.UUID) -> str:
 async def list_sales(
     date_from: Optional[date] = Query(None),
     date_to: Optional[date] = Query(None),
+    payment_method: Optional[str] = Query(None),
     limit: int = Query(100, le=1000),
     offset: int = Query(0),
     user: User = Depends(require_profile_complete),
@@ -88,6 +89,8 @@ async def list_sales(
         filters.append(func.date(Sale.created_at) >= date_from)
     if date_to:
         filters.append(func.date(Sale.created_at) <= date_to)
+    if payment_method:
+        filters.append(Sale.payment_method == payment_method)
 
     result = await db.execute(
         select(Sale).options(selectinload(Sale.items))
