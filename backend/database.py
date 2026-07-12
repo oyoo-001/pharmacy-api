@@ -128,6 +128,9 @@ async def _run_column_migrations():
         "ALTER TABLE pharmacy_settings ADD COLUMN IF NOT EXISTS receipt_header TEXT",
         "ALTER TABLE pharmacy_settings ADD COLUMN IF NOT EXISTS receipt_notes TEXT",
         "ALTER TABLE pharmacy_settings ADD COLUMN IF NOT EXISTS receipt_accent_color VARCHAR(20) DEFAULT '#6366f1'",
+        # notifications.recipient_user_id — for per-user (worker) targeted notifications
+        "ALTER TABLE notifications ADD COLUMN IF NOT EXISTS recipient_user_id UUID REFERENCES users(id)",
+        "CREATE INDEX IF NOT EXISTS idx_notifications_recipient ON notifications(recipient_user_id, is_read)",
         "ALTER TABLE pharmacy_settings ADD COLUMN IF NOT EXISTS receipt_width VARCHAR(20) DEFAULT '80mm'",
         "ALTER TABLE pharmacy_settings ADD COLUMN IF NOT EXISTS receipt_show_tax BOOLEAN DEFAULT TRUE",
         "ALTER TABLE pharmacy_settings ADD COLUMN IF NOT EXISTS receipt_show_qr BOOLEAN DEFAULT FALSE",

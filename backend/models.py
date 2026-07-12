@@ -440,6 +440,8 @@ class Notification(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     admin_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    # recipient_user_id: NULL = admin-only; set to a worker's user ID for worker-targeted notifications
+    recipient_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)
     title = Column(String(200), nullable=False)
     message = Column(Text, nullable=False)
     type = Column(String(50), default="info")  # info | medicine | low_stock | message | alert
@@ -450,4 +452,5 @@ class Notification(Base):
     __table_args__ = (
         Index("idx_notifications_admin_read", "admin_id", "is_read"),
         Index("idx_notifications_admin_created", "admin_id", "created_at"),
+        Index("idx_notifications_recipient", "recipient_user_id", "is_read"),
     )
