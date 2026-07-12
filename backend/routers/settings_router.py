@@ -24,6 +24,13 @@ class SettingsUpdate(BaseModel):
     receipt_footer: Optional[str] = None
     logo_path: Optional[str] = None
     currency_symbol: Optional[str] = None
+    # ── Receipt design fields ────────────────────────────────────────────
+    receipt_header: Optional[str] = None
+    receipt_notes: Optional[str] = None
+    receipt_accent_color: Optional[str] = None
+    receipt_width: Optional[str] = None
+    receipt_show_tax: Optional[bool] = None
+    receipt_show_qr: Optional[bool] = None
 
 
 class SettingsResponse(BaseModel):
@@ -37,6 +44,13 @@ class SettingsResponse(BaseModel):
     receipt_footer: Optional[str] = None
     logo_path: Optional[str] = None
     currency_symbol: Optional[str] = None
+    # ── Receipt design fields ────────────────────────────────────────────
+    receipt_header: Optional[str] = None
+    receipt_notes: Optional[str] = None
+    receipt_accent_color: Optional[str] = None
+    receipt_width: Optional[str] = None
+    receipt_show_tax: Optional[bool] = True
+    receipt_show_qr: Optional[bool] = False
 
     class Config:
         from_attributes = True

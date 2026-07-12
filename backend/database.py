@@ -124,6 +124,13 @@ async def _run_column_migrations():
         )""",
         "CREATE INDEX IF NOT EXISTS idx_sync_sessions_token ON mobile_sync_sessions(token)",
         "CREATE INDEX IF NOT EXISTS idx_sync_sessions_admin ON mobile_sync_sessions(admin_id)",
+        # ── Receipt design columns ───────────────────────────────────────
+        "ALTER TABLE pharmacy_settings ADD COLUMN IF NOT EXISTS receipt_header TEXT",
+        "ALTER TABLE pharmacy_settings ADD COLUMN IF NOT EXISTS receipt_notes TEXT",
+        "ALTER TABLE pharmacy_settings ADD COLUMN IF NOT EXISTS receipt_accent_color VARCHAR(20) DEFAULT '#6366f1'",
+        "ALTER TABLE pharmacy_settings ADD COLUMN IF NOT EXISTS receipt_width VARCHAR(20) DEFAULT '80mm'",
+        "ALTER TABLE pharmacy_settings ADD COLUMN IF NOT EXISTS receipt_show_tax BOOLEAN DEFAULT TRUE",
+        "ALTER TABLE pharmacy_settings ADD COLUMN IF NOT EXISTS receipt_show_qr BOOLEAN DEFAULT FALSE",
     ]
 
     # Execute each statement in its own transaction so one failure cannot

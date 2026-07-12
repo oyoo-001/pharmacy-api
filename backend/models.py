@@ -98,6 +98,13 @@ class PharmacySetting(Base):
     receipt_footer = Column(Text)
     logo_path = Column(Text)
     currency_symbol = Column(String(10), default="KES")
+    # ── Receipt design fields ────────────────────────────────────────────
+    receipt_header = Column(Text)                       # custom header text (e.g. "Welcome!")
+    receipt_notes = Column(Text)                        # notes section above footer
+    receipt_accent_color = Column(String(20), default="#6366f1")  # theme color
+    receipt_width = Column(String(20), default="80mm")  # 58mm | 80mm | A4
+    receipt_show_tax = Column(default=True)              # show/hide tax line
+    receipt_show_qr = Column(default=False)              # show/hide QR code
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     admin = relationship("User", back_populates="settings")
