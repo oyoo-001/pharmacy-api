@@ -331,10 +331,22 @@ async def submit_scan(
             detail="Session token does not belong to this pharmacy.",
         )
 
-    if sync_session.status != "pending":
+    # Allow scanning if session is pending OR completed (reusable for 24h)
+    if sync_session.status not in ("pending", "completed"):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Session already {sync_session.status}.",
+            detail=f"Session is {sync_session.status} and cannot accept new scans.",
+        )
+
+    # Reject if session is older than 24 hours
+    from datetime import timedelta
+    session_age = datetime.now(timezone.utc) - sync_session.created_at.replace(tzinfo=timezone.utc)
+    if session_age > timedelta(hours=24):
+        sync_session.status = "expired"
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="Session expired. Please refresh the page to start a new session.",
         )
 
     # ── 2. openFDA lookup ─────────────────────────────────────────────────────
@@ -388,6 +400,31 @@ async def submit_scan(
         medicine_id = str(medicine.id),
         message     = f"Medicine '{name}' added successfully.",
     )
+
+
+@router.post("/api/sync/reset/{token}")
+async def reset_sync_session(
+    token: str,
+    user:  User = Depends(get_current_user),
+    db:    AsyncSession = Depends(get_db),
+):
+    """Reset a session back to pending so the phone can scan another item."""
+    result = await db.execute(
+        select(MobileSyncSession).where(MobileSyncSession.token == token)
+    )
+    sync_session = result.scalar_one_or_none()
+    if not sync_session:
+        raise HTTPException(status_code=404, detail="Session not found.")
+
+    admin_id = get_tenant_id(user)
+    if sync_session.admin_id != admin_id:
+        raise HTTPException(status_code=403, detail="Access denied.")
+
+    sync_session.status = "pending"
+    sync_session.medicine_id = None
+    sync_session.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    return {"ok": True, "message": "Session reset."}
 
 
 # ── Desktop poll endpoint ─────────────────────────────────────────────────────

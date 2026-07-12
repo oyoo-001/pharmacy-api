@@ -724,6 +724,18 @@ input:focus,textarea:focus,select:focus{border-color:#6366f1;background:#fff;}
 #previewImg{max-width:100%;max-height:120px;border-radius:8px;margin-top:10px;
             display:none;box-shadow:0 2px 8px rgba(0,0,0,.1);}
 .ai-status{margin-top:10px;font-size:12px;color:#6366f1;font-weight:600;display:none;}
+/* ── AI error card ──────────────────────────────────────────── */
+.ai-error{display:none;margin-top:14px;background:#fef2f2;border:1px solid #fecaca;
+          border-radius:12px;padding:16px;text-align:center;}
+.ai-error .err-icon{font-size:28px;margin-bottom:6px;}
+.ai-error .err-title{font-size:14px;font-weight:700;color:#991b1b;margin-bottom:4px;}
+.ai-error .err-msg{font-size:12px;color:#7f1d1d;line-height:1.5;margin-bottom:12px;
+                   word-break:break-word;}
+.ai-error .retry-btn{display:inline-block;padding:10px 28px;border:none;border-radius:8px;
+                     background:#6366f1;color:#fff;font-size:13px;font-weight:700;
+                     cursor:pointer;transition:background .2s;}
+.ai-error .retry-btn:hover{background:#4f46e5;}
+.ai-error .retry-btn:active{background:#4338ca;}
 
 /* ── Camera modal ─────────────────────────────────────────── */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;
@@ -832,7 +844,13 @@ input:focus,textarea:focus,select:focus{border-color:#6366f1;background:#fff;}
     </button>
   </form>
 
-  <div class="status" id="statusBox"></div>
+    <div class="status" id="statusBox"></div>
+    <div class="ai-error" id="aiError">
+      <div class="err-icon">⚠️</div>
+      <div class="err-title">AI Analysis Failed</div>
+      <div class="err-msg" id="aiErrorMsg"></div>
+      <button class="retry-btn" id="retryBtn" onclick="retryAnalysis()">🔄 Retry</button>
+    </div>
 </div>
 
 <!-- ── Camera modal ──────────────────────────────────────────────── -->
@@ -878,6 +896,9 @@ async function initSession() {
 const fileInput  = document.getElementById('fileInput');
 const previewImg = document.getElementById('previewImg');
 const aiStatus   = document.getElementById('aiStatus');
+const aiError    = document.getElementById('aiError');
+const aiErrorMsg = document.getElementById('aiErrorMsg');
+let lastAnalyzedFile = null;
 const uploadBtn  = document.getElementById('uploadBtn');
 const cameraBtn  = document.getElementById('cameraBtn');
 
@@ -905,6 +926,8 @@ async function analyzeImage(file) {
   aiStatus.style.display = 'block';
   aiStatus.textContent = '🤖 Analyzing with AI...';
   aiStatus.style.color = '#6366f1';
+  aiError.style.display = 'none';
+  lastAnalyzedFile = file;
 
   try {
     const base64 = await fileToBase64(file);
@@ -939,13 +962,22 @@ async function analyzeImage(file) {
     aiStatus.textContent = '✅ AI analysis complete — fields auto-filled!';
     aiStatus.style.color = '#16a34a';
   } catch(err) {
-    aiStatus.textContent = '❌ ' + err.message;
-    aiStatus.style.color = '#dc2626';
+    aiStatus.style.display = 'none';
+    aiErrorMsg.textContent = err.message;
+    aiError.style.display = 'block';
   } finally {
     btn.classList.remove('loading');
     btn.disabled = false;
     cameraBtn.disabled = false;
   }
+}
+
+function retryAnalysis() {
+  if (!lastAnalyzedFile) {
+    aiErrorMsg.textContent = 'No image to retry. Please upload or take a photo again.';
+    return;
+  }
+  analyzeImage(lastAnalyzedFile);
 }
 
 function fileToBase64(file) {
