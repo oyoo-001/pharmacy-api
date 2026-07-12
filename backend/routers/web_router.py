@@ -725,34 +725,22 @@ input:focus,textarea:focus,select:focus{border-color:#6366f1;background:#fff;}
             display:none;box-shadow:0 2px 8px rgba(0,0,0,.1);}
 .ai-status{margin-top:10px;font-size:12px;color:#6366f1;font-weight:600;display:none;}
 
-/* ── Camera modal (mobile-only, fullscreen) ──────────────────── */
-.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.92);display:none;
-               align-items:center;justify-content:center;z-index:999;
-               flex-direction:column;}
+/* ── Camera modal ─────────────────────────────────────────── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;
+               align-items:center;justify-content:center;z-index:999;}
 .modal-overlay.show{display:flex;}
-.modal-box{background:#0f172a;border-radius:0;padding:0;width:100%;height:100%;
-           max-width:100%;display:flex;flex-direction:column;
-           text-align:center;overflow:hidden;position:relative;}
-.modal-box h3{font-size:15px;color:#fff;margin:0;padding:14px 16px 10px;
-              background:#0f172a;letter-spacing:1px;font-weight:800;}
-.modal-box video{flex:1;width:100%;object-fit:cover;border-radius:0;background:#000;}
-.modal-btns{display:flex;gap:0;justify-content:stretch;padding:0;}
-.modal-btns button{flex:1;padding:16px 0;border-radius:0;font-size:15px;font-weight:700;
-                   border:none;cursor:pointer;}
+.modal-box{background:#fff;border-radius:16px;padding:0;width:92%;max-width:400px;
+           text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.3);
+           max-height:75vh;display:flex;flex-direction:column;overflow:hidden;}
+.modal-box h3{font-size:16px;color:#0f172a;margin:0;padding:16px 20px 12px;flex-shrink:0;
+              border-bottom:1px solid #f1f5f9;}
+.modal-box video{width:100%;background:#000;flex:1;min-height:0;object-fit:cover;}
+.modal-btns{display:flex;gap:0;flex-shrink:0;}
+.modal-btns button{flex:1;padding:14px 0;border:none;font-size:14px;font-weight:700;cursor:pointer;}
 .modal-btns .capture{background:#6366f1;color:#fff;}
 .modal-btns .capture:hover{background:#4f46e5;}
-.modal-btns .cancel{background:#1e293b;color:#94a3b8;}
-.modal-btns .cancel:hover{background:#334155;}
-/* On desktop, keep a small centered modal as fallback if somehow triggered */
-@media(min-width:640px){
-  .modal-overlay{align-items:center;justify-content:center;background:rgba(0,0,0,.55);}
-  .modal-box{border-radius:16px;padding:20px;width:90%;max-width:380px;height:auto;
-             max-height:80vh;}
-  .modal-box h3{border-radius:16px 16px 0 0;}
-  .modal-box video{border-radius:10px;max-height:50vh;}
-  .modal-btns{border-radius:0 0 16px 16px;}
-  .modal-btns button{border-radius:0;}
-}
+.modal-btns .cancel{background:#f1f5f9;color:#475569;}
+.modal-btns .cancel:hover{background:#e2e8f0;}
 </style>
 </head>
 <body>
@@ -787,6 +775,12 @@ input:focus,textarea:focus,select:focus{border-color:#6366f1;background:#fff;}
       <input type="text" id="drugName" name="name" required
              placeholder="e.g. Amoxicillin 500mg" autocomplete="off">
       <div class="hint">Type the brand or generic name — we'll look it up on openFDA.</div>
+    </div>
+
+    <div class="field">
+      <label>Category</label>
+      <input type="text" id="category" name="category"
+             placeholder="e.g. Antibiotics, Analgesic">
     </div>
 
     <div class="row">
@@ -933,8 +927,8 @@ async function analyzeImage(file) {
 
     // Auto-fill form fields from Gemini response
     if (data.name)        document.getElementById('drugName').value       = data.name;
-    if (data.category)    document.getElementById('description').value    = (document.getElementById('description').value ? document.getElementById('description').value + '\n' : '') + 'Category: ' + data.category;
-    if (data.description) document.getElementById('description').value    = (document.getElementById('description').value ? document.getElementById('description').value + '\n' : '') + data.description;
+    if (data.category)    document.getElementById('category').value       = data.category;
+    if (data.description) document.getElementById('description').value    = data.description;
     if (data.batch_number) document.getElementById('batchNumber').value  = data.batch_number;
     if (data.expiry_date)  document.getElementById('expiryDate').value   = data.expiry_date;
     if (data.buying_price)  document.getElementById('buyingPrice').value  = data.buying_price;
@@ -1036,6 +1030,14 @@ document.getElementById('addForm').addEventListener('submit', async function(e) 
     session_token:  sessionToken,
     pharmacy_id:    pharmacyId,
     extracted_text: drugName,
+    category:       document.getElementById('category')?.value?.trim() || null,
+    description:    document.getElementById('description')?.value?.trim() || null,
+    batch_number:   document.getElementById('batchNumber')?.value?.trim() || null,
+    expiry_date:    document.getElementById('expiryDate')?.value || null,
+    buying_price:   parseFloat(document.getElementById('buyingPrice')?.value) || null,
+    selling_price:  parseFloat(document.getElementById('sellingPrice')?.value) || null,
+    quantity:       parseInt(document.getElementById('quantity')?.value) || null,
+    reorder_level:  parseInt(document.getElementById('reorderLevel')?.value) || null,
   };
 
   try {

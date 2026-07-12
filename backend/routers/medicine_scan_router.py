@@ -47,6 +47,15 @@ class ScanPayload(BaseModel):
     session_token: str
     pharmacy_id:   str        # admin_id (UUID string)
     extracted_text: str
+    # Optional fields — filled by AI or user on the web form
+    category:      Optional[str]  = None
+    description:   Optional[str]  = None
+    batch_number:  Optional[str]  = None
+    expiry_date:   Optional[str]  = None
+    buying_price:  Optional[float] = None
+    selling_price: Optional[float] = None
+    quantity:      Optional[int]   = None
+    reorder_level: Optional[int]   = None
 
 
 class ImageAnalysisPayload(BaseModel):
@@ -332,25 +341,35 @@ async def submit_scan(
     drug_text = payload.extracted_text.strip()
     fda_data  = await _lookup_fda(drug_text)
 
-    name        = fda_data.get("name")        or drug_text
-    category    = fda_data.get("category")    or None
-    description = fda_data.get("description") or None
+    # Use AI/form values first, fall back to FDA, then defaults
+    name        = payload.extracted_text.strip() or fda_data.get("name") or drug_text
+    category    = payload.category     or fda_data.get("category")    or None
+    description = payload.description  or fda_data.get("description") or None
 
     log.info("Scan: pharmacy=%s drug=%r → name=%r category=%r",
              claimed_admin, drug_text, name, category)
 
     # ── 3. Build Medicine row ─────────────────────────────────────────────────
+    from datetime import date as _date
+    expiry = None
+    if payload.expiry_date:
+        try:
+            expiry = _date.fromisoformat(payload.expiry_date)
+        except (ValueError, TypeError):
+            pass
+
     medicine = Medicine(
         admin_id      = claimed_admin,
         session_token = payload.session_token,
         name          = name,
         category      = category,
         description   = description,
-        # Financial + stock fields default to safe zeros
-        buying_price  = 0.0,
-        selling_price = 0.0,
-        quantity      = 0,
-        reorder_level = 10,
+        batch_number  = payload.batch_number or None,
+        expiry_date   = expiry,
+        buying_price  = payload.buying_price  if payload.buying_price  is not None else 0.0,
+        selling_price = payload.selling_price if payload.selling_price is not None else 0.0,
+        quantity      = payload.quantity      if payload.quantity      is not None else 0,
+        reorder_level = payload.reorder_level if payload.reorder_level is not None else 10,
         is_active     = True,
     )
     db.add(medicine)
