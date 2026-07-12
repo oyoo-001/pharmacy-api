@@ -786,12 +786,16 @@ input:focus,textarea:focus,select:focus{border-color:#6366f1;background:#fff;}
   <!-- ── AI image scan section ─────────────────────────────────── -->
   <div class="ai-section" id="aiSection">
     <p>📸 Scan medicine package with AI</p>
+    <p style="font-size:11px;color:#94a3b8;font-weight:400;margin-bottom:12px;">Upload up to 3 photos (front, back, side), then tap Scan</p>
     <div class="ai-btns">
       <button type="button" class="ai-btn upload" id="uploadBtn" onclick="document.getElementById('fileInput').click()">
         <span class="btn-icon">📤</span><span class="loader"></span> Upload Photo
       </button>
       <button type="button" class="ai-btn camera" id="cameraBtn" onclick="openCamera()">
         <span class="btn-icon">📷</span><span class="loader"></span> Take Photo
+      </button>
+      <button type="button" class="ai-btn" id="scanBtn" onclick="scanAllImages()" style="background:#059669;color:#fff;display:none;">
+        <span class="btn-icon">🔍</span><span class="loader"></span> Scan with AI
       </button>
     </div>
     <input type="file" id="fileInput" accept="image/*" style="display:none">
@@ -925,21 +929,83 @@ const imgCounter = document.getElementById('imgCounter');
 const clearAllBtn= document.getElementById('clearAllBtn');
 const uploadBtn  = document.getElementById('uploadBtn');
 const cameraBtn  = document.getElementById('cameraBtn');
-let uploadedFiles = [];   // {file, dataUrl, result}
-let mergedData = {};      // merged results from all images
+const scanBtn    = document.getElementById('scanBtn');
+let pendingFiles = [];   // raw files waiting to be scanned
+let uploadedFiles = [];  // {file, dataUrl, result} — already scanned
+let mergedData = {};      // merged results from all scanned images
 
 fileInput.addEventListener('change', function(e) {
   const file = e.target.files[0];
   if (!file) return;
-  if (uploadedFiles.length >= MAX_IMAGES) return;
-  analyzeImage(file);
+  if (pendingFiles.length + uploadedFiles.length >= MAX_IMAGES) return;
+  addPendingFile(file);
+  fileInput.value = '';
 });
 
+function addPendingFile(file) {
+  var reader = new FileReader();
+  reader.onload = function(ev) {
+    pendingFiles.push({ file: file, dataUrl: ev.target.result });
+    renderPendingThumbnails();
+    updateUI();
+  };
+  reader.readAsDataURL(file);
+}
+
+function renderPendingThumbnails() {
+  thumbGrid.innerHTML = '';
+  // Show already scanned images
+  uploadedFiles.forEach(function(item, i) {
+    var wrap = document.createElement('div');
+    wrap.className = 'thumb-wrap';
+    wrap.innerHTML = '<img src="' + item.dataUrl + '">' +
+      '<span class="thumb-num">' + (i+1) + '</span>' +
+      '<button class="thumb-del" onclick="removeScannedImage(' + i + ')" title="Remove">&times;</button>';
+    thumbGrid.appendChild(wrap);
+  });
+  // Show pending (unscanned) images
+  pendingFiles.forEach(function(item, i) {
+    var wrap = document.createElement('div');
+    wrap.className = 'thumb-wrap';
+    wrap.style.borderColor = '#fbbf24';
+    wrap.innerHTML = '<img src="' + item.dataUrl + '">' +
+      '<span class="thumb-num" style="background:#f59e0b;">P' + (i+1) + '</span>' +
+      '<button class="thumb-del" onclick="removePendingImage(' + i + ')" title="Remove">&times;</button>';
+    thumbGrid.appendChild(wrap);
+  });
+}
+
+function removePendingImage(idx) {
+  pendingFiles.splice(idx, 1);
+  renderPendingThumbnails();
+  updateUI();
+}
+
+function removeScannedImage(idx) {
+  uploadedFiles.splice(idx, 1);
+  mergedData = {};
+  uploadedFiles.forEach(function(item) { mergeData(item.result); });
+  applyMergedToForm();
+  renderPendingThumbnails();
+  updateUI();
+}
+
 function updateUI() {
-  const n = uploadedFiles.length;
-  imgCounter.textContent = n > 0 ? n + '/' + MAX_IMAGES + ' images scanned' : '';
-  clearAllBtn.style.display = n > 1 ? 'inline-block' : 'none';
-  if (n >= MAX_IMAGES) {
+  var total = pendingFiles.length + uploadedFiles.length;
+  var scanned = uploadedFiles.length;
+  var pending = pendingFiles.length;
+  if (scanned > 0 && pending > 0) {
+    imgCounter.textContent = scanned + ' scanned, ' + pending + ' pending';
+  } else if (scanned > 0) {
+    imgCounter.textContent = scanned + '/' + MAX_IMAGES + ' images scanned';
+  } else if (pending > 0) {
+    imgCounter.textContent = pending + ' image' + (pending>1?'s':'') + ' ready to scan';
+  } else {
+    imgCounter.textContent = '';
+  }
+  clearAllBtn.style.display = total > 0 ? 'inline-block' : 'none';
+  scanBtn.style.display = pendingFiles.length > 0 ? 'inline-flex' : 'none';
+  if (total >= MAX_IMAGES) {
     uploadBtn.disabled = true;
     cameraBtn.disabled = true;
   } else {
@@ -948,31 +1014,8 @@ function updateUI() {
   }
 }
 
-function renderThumbnails() {
-  thumbGrid.innerHTML = '';
-  uploadedFiles.forEach(function(item, i) {
-    const wrap = document.createElement('div');
-    wrap.className = 'thumb-wrap';
-    wrap.innerHTML = '<img src="' + item.dataUrl + '">' +
-      '<span class="thumb-num">' + (i+1) + '</span>' +
-      '<button class="thumb-del" onclick="removeImage(' + i + ')" title="Remove">&times;</button>';
-    thumbGrid.appendChild(wrap);
-  });
-}
-
-function removeImage(idx) {
-  uploadedFiles.splice(idx, 1);
-  // Rebuild merged data from remaining results
-  mergedData = {};
-  uploadedFiles.forEach(function(item) {
-    mergeData(item.result);
-  });
-  applyMergedToForm();
-  renderThumbnails();
-  updateUI();
-}
-
 function clearAllImages() {
+  pendingFiles = [];
   uploadedFiles = [];
   mergedData = {};
   thumbGrid.innerHTML = '';
@@ -1006,74 +1049,65 @@ function applyMergedToForm() {
   if (mergedData.reorder_level) document.getElementById('reorderLevel').value = mergedData.reorder_level;
 }
 
-async function analyzeImage(file) {
-  if (uploadedFiles.length >= MAX_IMAGES) return;
-  var btn = uploadBtn;
-  btn.classList.add('loading');
-  btn.disabled = true;
+async function scanAllImages() {
+  if (pendingFiles.length === 0) return;
+  scanBtn.disabled = true;
+  uploadBtn.disabled = true;
   cameraBtn.disabled = true;
   aiStatus.style.display = 'block';
-  aiStatus.textContent = '🤖 Analyzing image ' + (uploadedFiles.length + 1) + '...';
-  aiStatus.style.color = '#6366f1';
   aiError.style.display = 'none';
 
-  try {
-    var base64 = await fileToBase64(file);
-    var mime   = file.type || 'image/jpeg';
+  var toScan = pendingFiles.slice();
+  pendingFiles = [];
 
-    var r = await fetch('/api/medicine/analyze-image', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + jwtToken,
-      },
-      body: JSON.stringify({ image_base64: base64, mime_type: mime, image_number: uploadedFiles.length + 1 }),
-    });
+  for (var i = 0; i < toScan.length; i++) {
+    aiStatus.textContent = '🤖 Analyzing image ' + (uploadedFiles.length + 1) + ' of ' + (uploadedFiles.length + toScan.length) + '...';
+    aiStatus.style.color = '#6366f1';
+    try {
+      var base64 = await fileToBase64(toScan[i].file);
+      var mime = toScan[i].file.type || 'image/jpeg';
+      var r = await fetch('/api/medicine/analyze-image', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + jwtToken,
+        },
+        body: JSON.stringify({ image_base64: base64, mime_type: mime, image_number: uploadedFiles.length + 1 }),
+      });
+      var data = await r.json();
+      if (!r.ok || data.error) throw new Error(data.error || 'Analysis failed');
 
-    var data = await r.json();
-
-    if (!r.ok || data.error) {
-      throw new Error(data.error || 'Analysis failed');
-    }
-
-    // Store the file and result
-    var reader = new FileReader();
-    var dataUrl = await new Promise(function(res) {
-      reader.onload = function(ev) { res(ev.target.result); };
-      reader.readAsDataURL(file);
-    });
-
-    uploadedFiles.push({ file: file, dataUrl: dataUrl, result: data });
-    mergeData(data);
-    applyMergedToForm();
-    renderThumbnails();
-    updateUI();
-
-    aiStatus.textContent = '✅ Image ' + uploadedFiles.length + ' analyzed — ' + uploadedFiles.length + '/' + MAX_IMAGES + ' done';
-    aiStatus.style.color = '#16a34a';
-  } catch(err) {
-    aiStatus.style.display = 'none';
-    aiErrorMsg.textContent = err.message;
-    aiError.style.display = 'block';
-  } finally {
-    btn.classList.remove('loading');
-    btn.disabled = false;
-    cameraBtn.disabled = false;
-    if (uploadedFiles.length >= MAX_IMAGES) {
-      uploadBtn.disabled = true;
-      cameraBtn.disabled = true;
+      uploadedFiles.push({ file: toScan[i].file, dataUrl: toScan[i].dataUrl, result: data });
+      mergeData(data);
+    } catch(err) {
+      aiErrorMsg.textContent = 'Image ' + (uploadedFiles.length + 1) + ': ' + err.message;
+      aiError.style.display = 'block';
     }
   }
+
+  applyMergedToForm();
+  renderPendingThumbnails();
+  updateUI();
+
+  if (Object.keys(mergedData).length > 0) {
+    aiStatus.textContent = '✅ ' + uploadedFiles.length + ' image(s) analyzed — fields auto-filled!';
+    aiStatus.style.color = '#16a34a';
+  } else {
+    aiStatus.style.display = 'none';
+  }
+
+  scanBtn.disabled = false;
+  uploadBtn.disabled = false;
+  cameraBtn.disabled = false;
+  updateUI();
 }
 
 function retryAnalysis() {
-  if (uploadedFiles.length === 0) {
-    aiErrorMsg.textContent = 'No image to retry. Please upload or take a photo again.';
+  if (uploadedFiles.length === 0 && pendingFiles.length === 0) {
+    aiErrorMsg.textContent = 'No image to retry. Please upload or take a photo first.';
     return;
   }
-  // Retry with the last failed file — remove it first if it exists in the list
-  var lastFile = uploadedFiles.length > 0 ? uploadedFiles[uploadedFiles.length - 1].file : null;
-  if (lastFile) analyzeImage(lastFile);
+  scanAllImages();
 }
 
 function fileToBase64(file) {
@@ -1125,8 +1159,9 @@ async function capturePhoto() {
   canvas.toBlob(async function(blob) {
     closeCamera();
     if (!blob) return;
+    if (pendingFiles.length + uploadedFiles.length >= MAX_IMAGES) return;
     const file = new File([blob], 'camera_capture.jpg', { type: 'image/jpeg' });
-    await analyzeImage(file);
+    addPendingFile(file);
   }, 'image/jpeg', 0.92);
 }
 
@@ -1190,6 +1225,7 @@ document.getElementById('addForm').addEventListener('submit', async function(e) 
       btn.innerHTML = '💊 Add Medicine';
       document.getElementById('statusBox').style.display = 'none';
       clearAllImages();
+      scanBtn.disabled = false;
     }, 6000);
 
   } catch(err) {

@@ -155,6 +155,20 @@ def _first(lst) -> Optional[str]:
     return None
 
 
+def _safe_float(val) -> float:
+    """Convert a value to float safely, stripping non-numeric chars."""
+    if val is None:
+        return 0.0
+    if isinstance(val, (int, float)):
+        return float(val)
+    import re
+    cleaned = re.sub(r"[^\d.]", "", str(val))
+    try:
+        return float(cleaned) if cleaned else 0.0
+    except (ValueError, TypeError):
+        return 0.0
+
+
 # ── Gemini image analysis ────────────────────────────────────────────────────
 
 _GEMINI_URL = (
@@ -179,12 +193,14 @@ anything you cannot determine from THIS image):
   "description":  "string — short description of what the medicine is for",
   "batch_number": "string — batch/lot number if visible",
   "expiry_date":  "string — expiry date in YYYY-MM-DD format if visible",
-  "buying_price": "string - possible buying price in kenyan shilling",
-  "selling_price":"string - possible selling price to aim for a profit in kenyan market",
+  "buying_price": 0,
+  "selling_price": 0,
   "quantity":     10,
   "reorder_level": 10
 }
 
+buying_price and selling_price must be NUMBERS (not strings). If prices are
+printed on the package, extract them. If not visible, use 0.
 Do NOT include any markdown, backticks, or explanation — just the raw JSON.
 """
 
@@ -258,8 +274,8 @@ async def analyze_image(payload: ImageAnalysisPayload):
         description=str(data.get("description", "")),
         batch_number=str(data.get("batch_number", "")),
         expiry_date=str(data.get("expiry_date", "")),
-        buying_price=float(data.get("buying_price", 0) or 0),
-        selling_price=float(data.get("selling_price", 0) or 0),
+        buying_price=_safe_float(data.get("buying_price", 0)),
+        selling_price=_safe_float(data.get("selling_price", 0)),
         quantity=int(data.get("quantity", 0) or 0),
         reorder_level=int(data.get("reorder_level", 10) or 10),
     )
