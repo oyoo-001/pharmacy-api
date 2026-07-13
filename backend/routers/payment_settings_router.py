@@ -1,9 +1,9 @@
 """
-Payment Settings router — admin-only CRUD for per-tenant Paystack credentials.
+Payment Settings router — per-tenant Paystack credentials.
 
-GET  /payment-settings        — read own Paystack keys (secret masked)
-PUT  /payment-settings        — save / update keys
-POST /payment-settings/test   — verify keys by hitting Paystack /bank endpoint
+GET  /payment-settings        — read own Paystack keys (secret masked, any user)
+PUT  /payment-settings        — save / update keys (admin only)
+POST /payment-settings/test   — verify keys by hitting Paystack /bank endpoint (admin only)
 """
 import uuid
 from typing import Optional
@@ -16,7 +16,7 @@ from sqlalchemy import select
 
 from backend.database import get_db
 from backend.models import PaymentSettings, User
-from backend.auth import require_admin, get_tenant_id
+from backend.auth import require_admin, require_profile_complete, get_tenant_id
 
 router = APIRouter(prefix="/payment-settings", tags=["Payment Settings"])
 
@@ -54,10 +54,11 @@ def _mask_key(key: Optional[str]) -> Optional[str]:
 
 @router.get("", response_model=PaymentSettingsResponse)
 async def get_payment_settings(
-    user: User = Depends(require_admin),
+    user: User = Depends(require_profile_complete),
     db: AsyncSession = Depends(get_db),
 ):
-    """Return current payment settings for this admin (secret is masked)."""
+    """Return current payment settings for this admin (secret is masked).
+    Any authenticated user can read — only admins can write."""
     admin_id = get_tenant_id(user)
     result = await db.execute(
         select(PaymentSettings).where(PaymentSettings.admin_id == admin_id)
